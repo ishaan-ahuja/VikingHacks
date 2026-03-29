@@ -225,9 +225,13 @@ def encode_frame(frame) -> str:
     return base64.b64encode(buf).decode("utf-8")
 
 
-def _call_single(b64: str, model: str) -> dict:
+def _call_single(b64: str, model: str, question_hint: str = "") -> dict:
     """Call one vision model and return parsed JSON result."""
     key = os.environ.get("OPENROUTER_API_KEY", "")
+    # Prepend known question so model skips image-reading for it and goes straight to step-checking
+    prompt = VISION_PROMPT
+    if question_hint:
+        prompt = f"KNOWN QUESTION (already confirmed): {question_hint}\n\n" + prompt
     try:
         with httpx.Client(timeout=45.0) as client:
             resp = client.post(
@@ -241,7 +245,7 @@ def _call_single(b64: str, model: str) -> dict:
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": [
-                        {"type": "text",      "text": VISION_PROMPT},
+                        {"type": "text",      "text": prompt},
                         {"type": "image_url", "image_url": {
                             "url": f"data:image/jpeg;base64,{b64}", "detail": "high"
                         }},
@@ -347,20 +351,21 @@ def _merge_consensus(results: list) -> dict:
     }
 
 
-def call_vision_api(b64: str, fast: bool = False) -> dict:
+def call_vision_api(b64: str, fast: bool = False, question_hint: str = "") -> dict:
     """
     fast=True  → single fast model (periodic background scans, low latency).
     fast=False → two models in parallel, consensus merge (manual scan, accurate).
+    question_hint → pre-known question injected into prompt for faster, more accurate step-checking.
     """
     if fast:
-        result = _call_single(b64, FAST_MODEL)
+        result = _call_single(b64, FAST_MODEL, question_hint=question_hint)
         print(f"  [fast/{FAST_MODEL.split('/')[-1]}]")
         return result
 
     # Parallel consensus: GPT-4o + Gemini Flash
     results = [None, None]
     def _t(idx, model):
-        results[idx] = _call_single(b64, model)
+        results[idx] = _call_single(b64, model, question_hint=question_hint)
         name = model.split("/")[-1]
         errs = results[idx].get("errors", []) if results[idx] else []
         boxed = (results[idx].get("boxed_answer") or {}) if results[idx] else {}
@@ -1046,7 +1051,7 @@ def live_watch(api_key: str, cam_index: int = -1):
             state.update(analyzing=True, blank=False,
                          status="Analyzing...", status_color=(0,215,255))
 
-        result = call_vision_api(encode_frame(snap), fast=fast)
+        result = call_vision_api(encode_frame(snap), fast=fast, question_hint=locked_question)
         print_result(result, label)
 
         errors  = result.get("errors", [])
@@ -1197,10 +1202,12 @@ def live_watch(api_key: str, cam_index: int = -1):
         if key in (ord('s'), ord('S')):
             if not paused:
                 force_snap = True
-        if key in (ord('p'), ord('P')):   # P = pause / resume
+        if key in (ord('p'), ord('P')):   # P = pause / resume (writes to server = shared source of truth)
             paused = not paused
             with lock:
                 state["paused"] = paused
+            if SERVER_OK:
+                _server.push_state({"paused": paused})
             msg = "Scanning paused — score frozen." if paused else "Scanning resumed."
             print(f"  [{'PAUSED' if paused else 'RESUMED'}] {msg}")
             threading.Thread(target=speak, args=(msg,), daemon=True).start()
@@ -1239,6 +1246,16 @@ def live_watch(api_key: str, cam_index: int = -1):
                         speak(f"Please check {e.get('step','that step')}. {e.get('hint','')}")
                         time.sleep(0.6)
             threading.Thread(target=_speak_on_demand, args=(errs, q_now), daemon=True).start()
+
+        # ── sync pause from browser (browser /api/override toggles server; we read it back) ──
+        if SERVER_OK:
+            srv_paused = _server._state.get("paused", False)
+            if srv_paused != paused:
+                paused = srv_paused
+                with lock:
+                    state["paused"] = paused
+                msg = "Scanning paused." if paused else "Scanning resumed."
+                threading.Thread(target=speak, args=(msg,), daemon=True).start()
 
         # ── scan cycle ──
         if not paused and now - last_scan_at >= SCAN_INTERVAL:
@@ -1399,7 +1416,7 @@ def live_watch(api_key: str, cam_index: int = -1):
 
             _server.push_state({
                 "cam_ok":              _cam_ok,
-                "status":              ("⏸ PAUSED" if paused else _s.get("status", "")),
+                "status":              ("⏸ PAUSED — score frozen" if paused else _s.get("status", "")),
                 "status_state":        ("standby" if paused else _flow_state(_errs, _stuck, _fid, _cam_ok)),
                 "focus_score":         _focus(_errs, _stuck, _fid),
                 "score":               _s.get("score"),
