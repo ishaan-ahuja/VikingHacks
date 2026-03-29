@@ -427,13 +427,22 @@ body.state-flow::after{content:'';position:fixed;inset:0;z-index:0;pointer-event
 
 <!-- KEYBOARD BAR -->
 <div id="kbd-bar">
-  <div class="kbd-item"><kbd class="kbd">SPACE</kbd><span style="color:var(--green)">Speak errors</span></div>
+  <div class="kbd-item"><kbd class="kbd">SPACE</kbd><span style="color:var(--green)">Speak</span></div>
   <span class="kbd-sep">·</span>
-  <div class="kbd-item"><kbd class="kbd">S</kbd><span>Force scan</span></div>
+  <div class="kbd-item"><kbd class="kbd">S</kbd><span>Scan</span></div>
   <span class="kbd-sep">·</span>
-  <div class="kbd-item"><kbd class="kbd">R</kbd><span>Reflection</span></div>
+  <div class="kbd-item"><kbd class="kbd">H</kbd><span>Teach me</span></div>
+  <span class="kbd-sep">·</span>
+  <div class="kbd-item"><kbd class="kbd">C</kbd><span style="color:var(--green)">✓ Correct</span></div>
+  <span class="kbd-sep">·</span>
+  <div class="kbd-item"><kbd class="kbd">W</kbd><span style="color:var(--red)">✗ Wrong</span></div>
+  <span class="kbd-sep">·</span>
+  <div class="kbd-item" id="pause-kbd-item"><kbd class="kbd">P</kbd><span id="pause-kbd-label">Pause</span></div>
+  <span class="kbd-sep">·</span>
+  <div class="kbd-item"><kbd class="kbd">R</kbd><span>Reflect</span></div>
   <span class="kbd-sep">·</span>
   <div class="kbd-item"><kbd class="kbd">Q</kbd><span>Quit CV</span></div>
+  <div id="pause-banner" style="display:none;margin-left:12px;padding:2px 10px;border-radius:999px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);color:var(--amber);font-size:10px;font-weight:700;letter-spacing:.06em;animation:stuck-pulse .8s infinite alternate">⏸ PAUSED</div>
   <div id="kbd-status" style="margin-left:auto;color:var(--sub)">FlowState AI · GPT-4o Vision + Claude Sonnet · VikingHacks 2025</div>
 </div>
 
@@ -506,9 +515,9 @@ body.state-flow::after{content:'';position:fixed;inset:0;z-index:0;pointer-event
       <span class="strip-lbl">Errors</span>
       <span class="strip-val" id="s-errors">0</span>
     </div>
-    <div class="strip-item" id="strip-question" style="display:none">
+    <div class="strip-item" id="strip-question" style="display:flex">
       <span class="strip-lbl">Q</span>
-      <span class="strip-val sv-blue" id="s-question" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">—</span>
+      <span class="strip-val sv-blue" id="s-question" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">Solve for x when: 2x = 20</span>
     </div>
     <div class="strip-state">
       <div class="state-dot-sm sds-standby" id="state-dot"></div>
@@ -550,8 +559,8 @@ body.state-flow::after{content:'';position:fixed;inset:0;z-index:0;pointer-event
           </div>
           <div id="scan-countdown" class="visible">Next scan: —</div>
         </div>
-        <div class="question-strip" id="question-strip" style="display:none">
-          <span>Q</span><span id="question-text">—</span>
+        <div class="question-strip" id="question-strip" style="display:block">
+          <span>Q</span><span id="question-text">Solve for x when: 2x = 20</span>
         </div>
       </div>
 
@@ -1453,19 +1462,30 @@ function updateFromBackend(s) {
     }).join('');
   } else { repBanner.style.display='none'; }
 
-  // Boxed answer
+  // Boxed answer — only show finalized verdict (correct/incorrect); suppress while unconfirmed
   const boxed = s.boxed_answer||{};
-  if (boxed.detected) {
-    const bw = document.getElementById('boxed-wrap');
+  const bv = (boxed.verdict||'').toLowerCase();
+  const bw = document.getElementById('boxed-wrap');
+  if (boxed.detected && (bv === 'correct' || bv === 'incorrect')) {
     bw.style.display = 'block';
-    const v = (boxed.verdict||'').toLowerCase();
-    bw.className = v==='correct'?'correct':v==='incorrect'?'incorrect':'';
-    document.getElementById('boxed-val').textContent    = boxed.value||'';
-    document.getElementById('boxed-val').style.color    = v==='correct'?'var(--green)':v==='incorrect'?'var(--red)':'var(--amber)';
-    const verdictLabel = v==='correct'?'✓ Correct':v==='incorrect'?`✗ Incorrect — ${boxed.reason||''}`:'⟳ Detected — press S to confirm';
-    document.getElementById('boxed-verdict').textContent= verdictLabel;
-    document.getElementById('boxed-verdict').style.color= v==='correct'?'var(--green)':v==='incorrect'?'var(--red)':'var(--amber)';
-  } else { document.getElementById('boxed-wrap').style.display='none'; }
+    bw.className = bv === 'correct' ? 'correct' : 'incorrect';
+    document.getElementById('boxed-val').textContent  = boxed.value || '';
+    document.getElementById('boxed-val').style.color  = bv==='correct' ? 'var(--green)' : 'var(--red)';
+    document.getElementById('boxed-verdict').textContent = bv==='correct'
+      ? '✓ Correct — verified!'
+      : `✗ Incorrect — ${boxed.reason||'check your steps'}`;
+    document.getElementById('boxed-verdict').style.color = bv==='correct' ? 'var(--green)' : 'var(--red)';
+  } else if (boxed.detected && !bv) {
+    // Box seen but not yet confirmed — show subtle pending state
+    bw.style.display = 'block';
+    bw.className = '';
+    document.getElementById('boxed-val').textContent  = boxed.value || '';
+    document.getElementById('boxed-val').style.color  = 'var(--amber)';
+    document.getElementById('boxed-verdict').textContent = '⟳ Verifying — next scan will confirm';
+    document.getElementById('boxed-verdict').style.color  = 'var(--amber)';
+  } else {
+    bw.style.display = 'none';
+  }
 
   // Error history feed
   if (errorHist.length > 0) {
@@ -1893,10 +1913,72 @@ function openTeach() {
 }
 function closeTeach() { document.getElementById('teach-modal').style.display = 'none'; }
 
+// ── override helpers ────────────────────────────────────────────────
+let _isPaused = false;
+
+function _postOverride(action) {
+  fetch(`${BACKEND}/api/override`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({action})
+  }).then(r => r.json()).then(d => {
+    if (d.paused !== undefined) _setPausedUI(d.paused);
+  }).catch(() => {});
+}
+
+function _setPausedUI(paused) {
+  _isPaused = paused;
+  const banner = document.getElementById('pause-banner');
+  const label  = document.getElementById('pause-kbd-label');
+  if (banner) banner.style.display = paused ? 'block' : 'none';
+  if (label)  label.textContent    = paused ? 'Resume' : 'Pause';
+  // dim the video overlay when paused
+  const wrap = document.getElementById('webcam-stream');
+  if (wrap) wrap.style.filter = paused ? 'brightness(0.6) saturate(0.4)' : '';
+}
+
+function markCorrect() {
+  window.speechSynthesis?.cancel();
+  const u = new SpeechSynthesisUtterance('Boxed answer confirmed correct. Well done!');
+  u.rate = 1.05; window.speechSynthesis?.speak(u);
+  toast('success', '✅ Marked Correct', 'Manually confirmed', 5000);
+  _postOverride('correct');
+}
+
+function markWrong() {
+  window.speechSynthesis?.cancel();
+  const u = new SpeechSynthesisUtterance('Boxed answer is incorrect. Check your steps, then press H for help.');
+  u.rate = 1.05; window.speechSynthesis?.speak(u);
+  toast('error', '✗ Marked Wrong', 'Press H for step-by-step guide', 5000);
+  _postOverride('incorrect');
+}
+
+function togglePause() {
+  const next = !_isPaused;
+  _setPausedUI(next);
+  const msg = next ? 'Scanning paused. Score is frozen.' : 'Scanning resumed.';
+  window.speechSynthesis?.cancel();
+  const u = new SpeechSynthesisUtterance(msg);
+  u.rate = 1.05; window.speechSynthesis?.speak(u);
+  toast(next ? 'warn' : 'info', next ? '⏸ Paused' : '▶ Resumed', next ? 'Score frozen' : 'Scanning live', 3000);
+  _postOverride('pause');
+}
+
+// sync pause state from backend
+const _pauseOrigUpdate = window.updateFromBackend;
+window.updateFromBackend = function(s) {
+  _pauseOrigUpdate(s);
+  if (s.paused !== undefined && s.paused !== _isPaused) _setPausedUI(s.paused);
+  // show preset question on load
+  if (s.question && !_lastQuestion) _lastQuestion = s.question;
+};
+
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'r' || e.key === 'R') { triggerReflection(); return; }
   if (e.key === 'h' || e.key === 'H') { openTeach(); return; }
+  if (e.key === 'c' || e.key === 'C') { markCorrect(); return; }
+  if (e.key === 'w' || e.key === 'W') { markWrong(); return; }
+  if (e.key === 'p' || e.key === 'P') { togglePause(); return; }
   if (e.key === 'Escape') { closeTeach(); closeGame(); return; }
   if (e.key === ' ') {
     e.preventDefault();

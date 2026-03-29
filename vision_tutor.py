@@ -941,8 +941,12 @@ def live_watch(api_key: str, cam_index: int = -1):
     if SERVER_OK:
         _server.start_server()
 
+    # ── pre-load question ─────────────────────────────────────────────────────────
+    PRESET_QUESTION = "Solve for x when: 2x = 20"
+
     print("\nVision Tutor — Live")
-    print("  S = force scan  |  Q = quit\n")
+    print("  S = force scan  |  P = pause/resume  |  C = mark correct  |  W = mark wrong  |  Q = quit\n")
+    print(f"  Pre-loaded question: {PRESET_QUESTION}\n")
 
     # ── shared state ──
     lock         = threading.Lock()
@@ -950,7 +954,7 @@ def live_watch(api_key: str, cam_index: int = -1):
         "status":       "Watching...",
         "status_color": (180,180,180),
         "score":        None,
-        "question":     "",
+        "question":     PRESET_QUESTION,
         "errors":       [],
         "boxed_answer": {},
         "analyzing":    False,
@@ -958,6 +962,7 @@ def live_watch(api_key: str, cam_index: int = -1):
         "blank":        False,
         "stuck_time":   0.0,
         "popup_open":   False,
+        "paused":       False,
     }
     error_history        = []
     error_repeat_counts  = {}   # (step, found) -> int
@@ -967,12 +972,13 @@ def live_watch(api_key: str, cam_index: int = -1):
     last_speech_snap     = None  # frame at last TTS — suppresses same-paper speech
     last_boxed_spoken    = ""    # verdict hash to avoid repeating boxed verdict
     pending_boxed_verdict = ""   # verdict seen last scan — must match twice to fire
+    paused               = False  # P key — freeze scans, preserve current score
     pending_boxed_data    = {}
     active_errors        = []
-    active_question      = ""
+    active_question      = PRESET_QUESTION
     repeated_errors      = []
-    locked_question      = ""    # question locked once detected with high confidence
-    locked_question_conf = 0.0   # confidence at lock time
+    locked_question      = PRESET_QUESTION   # pre-loaded — AI knows the question from the start
+    locked_question_conf = 0.9               # high confidence so it won't be overridden by a bad read
     question_done        = False  # True after boxed-correct; resets for next question
 
     def _work_hash(question: str, errors: list) -> str:
@@ -1026,7 +1032,9 @@ def live_watch(api_key: str, cam_index: int = -1):
     SPEAK_COOLDOWN = 90.0   # seconds between speaking the same error key
 
     def run_analysis(snap, label="", fast=False):
-        nonlocal active_errors, active_question, repeated_errors, last_spoken_hash, last_all_good, last_speech_snap, last_boxed_spoken, locked_question, locked_question_conf, question_done, pending_boxed_verdict, pending_boxed_data
+        nonlocal active_errors, active_question, repeated_errors, last_spoken_hash, last_all_good, last_speech_snap, last_boxed_spoken, locked_question, locked_question_conf, question_done, pending_boxed_verdict, pending_boxed_data, paused
+        if paused:
+            return  # frozen — don't overwrite state
         if is_blank_frame(snap):
             with lock:
                 state.update(analyzing=False, blank=True, score=None,
@@ -1187,7 +1195,39 @@ def live_watch(api_key: str, cam_index: int = -1):
         if key in (ord('q'), 27):
             break
         if key in (ord('s'), ord('S')):
-            force_snap = True
+            if not paused:
+                force_snap = True
+        if key in (ord('p'), ord('P')):   # P = pause / resume
+            paused = not paused
+            with lock:
+                state["paused"] = paused
+            msg = "Scanning paused — score frozen." if paused else "Scanning resumed."
+            print(f"  [{'PAUSED' if paused else 'RESUMED'}] {msg}")
+            threading.Thread(target=speak, args=(msg,), daemon=True).start()
+        if key in (ord('c'), ord('C')):   # C = manually mark boxed answer correct
+            with lock:
+                ba = dict(state.get("boxed_answer") or {})
+                ba["detected"] = True
+                ba["verdict"]  = "correct"
+                ba["reason"]   = "Manually confirmed correct"
+                state["boxed_answer"] = ba
+                state["score"]        = 100
+                question_done        = True
+                locked_question      = ""
+                locked_question_conf = 0.0
+            pending_boxed_verdict = ""
+            print("  [MANUAL] Boxed answer marked CORRECT")
+            threading.Thread(target=speak, args=("Boxed answer confirmed correct. Well done!",), daemon=True).start()
+        if key in (ord('w'), ord('W')):   # W = manually mark boxed answer wrong
+            with lock:
+                ba = dict(state.get("boxed_answer") or {})
+                ba["detected"] = True
+                ba["verdict"]  = "incorrect"
+                ba["reason"]   = "Manually marked incorrect"
+                state["boxed_answer"] = ba
+            pending_boxed_verdict = ""
+            print("  [MANUAL] Boxed answer marked WRONG")
+            threading.Thread(target=speak, args=("Boxed answer is incorrect. Check your steps.",), daemon=True).start()
         if key == ord(' '):   # SPACE = speak current errors on demand
             errs = list(active_errors)
             q_now = active_question
@@ -1201,7 +1241,7 @@ def live_watch(api_key: str, cam_index: int = -1):
             threading.Thread(target=_speak_on_demand, args=(errs, q_now), daemon=True).start()
 
         # ── scan cycle ──
-        if now - last_scan_at >= SCAN_INTERVAL:
+        if not paused and now - last_scan_at >= SCAN_INTERVAL:
             last_scan_at = now
 
             with lock:
@@ -1359,8 +1399,8 @@ def live_watch(api_key: str, cam_index: int = -1):
 
             _server.push_state({
                 "cam_ok":              _cam_ok,
-                "status":              _s.get("status", ""),
-                "status_state":        _flow_state(_errs, _stuck, _fid, _cam_ok),
+                "status":              ("⏸ PAUSED" if paused else _s.get("status", "")),
+                "status_state":        ("standby" if paused else _flow_state(_errs, _stuck, _fid, _cam_ok)),
                 "focus_score":         _focus(_errs, _stuck, _fid),
                 "score":               _s.get("score"),
                 "question":            _s.get("question", ""),
@@ -1371,6 +1411,7 @@ def live_watch(api_key: str, cam_index: int = -1):
                 "blank":               _s.get("blank", False),
                 "stuck_time":          _stuck,
                 "popup_open":          _s.get("popup_open", False),
+                "paused":              paused,
                 "fidget":              float(_fid),
                 "fidget_velocity":     float(_fs.get("velocity", 0.0)),
                 "fidget_tapping":      float(_fs.get("tapping", 0.0)),

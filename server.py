@@ -38,7 +38,7 @@ _state: dict = {
     "status_state":       "standby",   # flow | drift | stuck | standby
     "focus_score":        0,
     "score":              None,
-    "question":           "",
+    "question":           "Solve for x when: 2x = 20",
     "errors":             [],
     "repeated_errors":    [],
     "boxed_answer":       {},
@@ -56,6 +56,7 @@ _state: dict = {
     "distracted_seconds": 0,
     "session_seconds":    0,
     "error_history":      [],
+    "paused":             False,
     "ts":                 0.0,
 }
 _frame         = None
@@ -171,6 +172,34 @@ Return ONLY valid JSON:
                 raw = raw.split("```")[1]
                 if raw.startswith("json"): raw = raw[4:]
             return jsonify(json.loads(raw.strip()))
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/override", methods=["POST"])
+    def override():
+        """Browser C/W/P keybinds push here to update boxed verdict or pause state."""
+        try:
+            body   = request.get_json(force=True) or {}
+            action = body.get("action", "")
+            with _lock:
+                if action == "correct":
+                    ba = dict(_state.get("boxed_answer") or {})
+                    ba.update(detected=True, verdict="correct", reason="Manually confirmed correct")
+                    _state["boxed_answer"] = ba
+                    _state["score"]        = 100
+                elif action == "incorrect":
+                    ba = dict(_state.get("boxed_answer") or {})
+                    ba.update(detected=True, verdict="incorrect", reason="Manually marked incorrect")
+                    _state["boxed_answer"] = ba
+                elif action == "pause":
+                    _state["paused"] = not _state.get("paused", False)
+                elif action == "set_pause":
+                    _state["paused"] = bool(body.get("value", False))
+                _state["ts"] = time.time()
+            _notify()
+            with _lock:
+                return jsonify({"ok": True, "paused": _state.get("paused", False),
+                                "boxed_answer": _state.get("boxed_answer", {})})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
