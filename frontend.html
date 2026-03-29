@@ -1,0 +1,2299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FlowState — AI Study Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:     #07080f;
+  --bg1:    #0d0e1c;
+  --bg2:    #131425;
+  --bg3:    #1a1b30;
+  --bg4:    #22243a;
+  --border: rgba(255,255,255,0.07);
+  --border2:rgba(255,255,255,0.12);
+  --text:   #e2e8f0;
+  --sub:    #64748b;
+  --sub2:   #94a3b8;
+  --green:  #00d68f;
+  --amber:  #f59e0b;
+  --red:    #f43f5e;
+  --blue:   #3b82f6;
+  --purple: #a78bfa;
+  --cyan:   #22d3ee;
+  --font:   'Space Grotesk', sans-serif;
+  --mono:   'JetBrains Mono', monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bg1)}::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+/* ── NOISE OVERLAY ── */
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.4}
+
+/* ── NAV ── */
+nav{position:fixed;top:0;left:0;right:0;z-index:200;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 2rem;background:rgba(7,8,15,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.nav-logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;letter-spacing:-0.5px}
+.nav-logo-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);animation:pulse-green 2s infinite}
+.nav-tabs{display:flex;gap:2px}
+.nav-tab{font-family:var(--mono);font-size:11px;font-weight:500;padding:6px 14px;border:none;background:transparent;color:var(--sub);cursor:pointer;border-radius:6px;transition:all .2s;letter-spacing:.03em;text-transform:uppercase}
+.nav-tab:hover{color:var(--text);background:var(--bg3)}
+.nav-tab.active{color:var(--green);background:rgba(0,214,143,0.08)}
+.nav-right{display:flex;align-items:center;gap:12px}
+.conn-badge{font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:999px;border:1px solid;display:flex;align-items:center;gap:5px;transition:all .3s}
+.conn-badge.live{color:var(--green);border-color:rgba(0,214,143,0.3);background:rgba(0,214,143,0.08)}
+.conn-badge.offline{color:var(--sub);border-color:var(--border);background:transparent}
+.conn-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.conn-badge.live .conn-dot{animation:pulse-green 1.5s infinite}
+
+/* ── SECTIONS ── */
+.section{display:none;padding-top:56px;min-height:100vh;position:relative;z-index:1}
+.section.active{display:block}
+
+/* ── TOP STRIP ── */
+.top-strip{display:flex;align-items:center;gap:0;background:var(--bg1);border-bottom:1px solid var(--border);height:44px;padding:0 2rem;font-family:var(--mono);font-size:11px;overflow:hidden}
+.strip-item{display:flex;align-items:center;gap:6px;padding:0 16px;border-right:1px solid var(--border);height:100%;white-space:nowrap}
+.strip-item:first-child{padding-left:0}
+.strip-lbl{color:var(--sub);text-transform:uppercase;letter-spacing:.05em}
+.strip-val{font-weight:600}
+.sv-green{color:var(--green)}
+.sv-red{color:var(--red)}
+.sv-blue{color:var(--blue)}
+.sv-amber{color:var(--amber)}
+.strip-state{display:flex;align-items:center;gap:6px;padding:0 16px;margin-left:auto}
+.state-pill{font-family:var(--mono);font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.08em;transition:all .4s}
+.state-pill.flow{background:rgba(0,214,143,0.12);color:var(--green);border:1px solid rgba(0,214,143,0.25)}
+.state-pill.drift{background:rgba(245,158,11,0.12);color:var(--amber);border:1px solid rgba(245,158,11,0.25)}
+.state-pill.stuck{background:rgba(244,63,94,0.12);color:var(--red);border:1px solid rgba(244,63,94,0.25);animation:stuck-pulse .8s infinite alternate}
+.state-pill.standby{background:var(--bg3);color:var(--sub);border:1px solid var(--border)}
+.state-dot-sm{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sds-flow{background:var(--green);box-shadow:0 0 8px var(--green)}
+.sds-drift{background:var(--amber)}
+.sds-stuck{background:var(--red);box-shadow:0 0 8px var(--red);animation:stuck-pulse .8s infinite alternate}
+.sds-standby{background:var(--sub)}
+
+/* ── MAIN GRID ── */
+.main-grid{display:grid;grid-template-columns:1fr 300px;grid-template-rows:auto;gap:0;height:calc(100vh - 132px)}
+.col-left{padding:1.5rem 1rem 1.5rem 2rem;display:flex;flex-direction:column;gap:1rem;overflow-y:auto}
+.col-right{border-left:1px solid var(--border);padding:1.25rem 1.5rem 1.25rem 1.25rem;display:flex;flex-direction:column;gap:1rem;overflow-y:auto;background:var(--bg1)}
+
+/* ── CARDS ── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:1.25rem;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;inset:0;border-radius:14px;background:linear-gradient(135deg,rgba(255,255,255,0.02) 0%,transparent 60%);pointer-events:none}
+.card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.card-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--sub2)}
+.card-badge{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;font-weight:700;letter-spacing:.05em}
+
+/* ── VIDEO ── */
+.video-wrap{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+#webcam,#webcam-stream{width:100%;height:100%;object-fit:cover;display:block}
+.vid-overlay{position:absolute;inset:0;pointer-events:none}
+.vid-tl{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:6px}
+.vid-tr{position:absolute;top:10px;right:10px}
+.vid-bl{position:absolute;bottom:10px;left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-end}
+.vid-chip{font-family:var(--mono);font-size:10px;font-weight:500;padding:3px 8px;border-radius:5px;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.1)}
+.vid-chip.live-green{color:var(--green)}
+.vid-chip.blue{color:var(--cyan)}
+.vid-chip.amber{color:var(--amber)}
+.vid-chip.red{color:var(--red)}
+.scan-ring{position:absolute;inset:0;border-radius:12px;border:2px solid transparent;pointer-events:none;transition:border-color .3s}
+.scan-ring.active{border-color:rgba(59,130,246,0.5);box-shadow:inset 0 0 30px rgba(59,130,246,0.08);animation:scan-sweep 1.5s linear infinite}
+@keyframes scan-sweep{0%{box-shadow:inset 0 0 30px rgba(59,130,246,0.08)}50%{box-shadow:inset 0 0 60px rgba(59,130,246,0.15)}100%{box-shadow:inset 0 0 30px rgba(59,130,246,0.08)}}
+.question-strip{background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:0 0 10px 10px;font-family:var(--mono);font-size:11px;color:var(--cyan)}
+.question-strip span{color:var(--sub);margin-right:6px}
+
+/* ── FOCUS RING ── */
+.focus-ring-wrap{position:relative;width:140px;height:140px;margin:0 auto}
+.focus-ring-wrap canvas{position:absolute;inset:0}
+.focus-ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.focus-number{font-size:36px;font-weight:700;line-height:1;transition:color .5s}
+.focus-label{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--sub);margin-top:2px}
+
+/* ── SCORE ROW ── */
+.score-row{display:flex;align-items:center;gap:1rem;margin-top:.75rem}
+.score-box{flex:1;text-align:center}
+.score-big{font-size:26px;font-weight:700;line-height:1;font-family:var(--mono)}
+.score-sub{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+
+/* ── GAUGE BARS ── */
+.gauge-row{display:flex;flex-direction:column;gap:8px}
+.gauge-item{display:flex;align-items:center;gap:8px}
+.gauge-lbl{font-family:var(--mono);font-size:10px;color:var(--sub);width:28px;flex-shrink:0}
+.gauge-track{flex:1;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:2px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.gauge-val{font-family:var(--mono);font-size:10px;color:var(--sub2);width:24px;text-align:right;flex-shrink:0}
+
+/* ── STUCK BAR ── */
+.stuck-wrap{margin-top:.5rem}
+.stuck-track{width:100%;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden}
+.stuck-fill{height:100%;border-radius:3px;transition:width .5s,background .5s}
+.stuck-labels{display:flex;justify-content:space-between;margin-top:4px;font-family:var(--mono);font-size:9px;color:var(--sub)}
+
+/* ── ERRORS ── */
+.error-list{display:flex;flex-direction:column;gap:8px}
+.error-card{border-radius:10px;padding:10px 12px;border:1px solid;animation:slide-in-up .3s ease;position:relative;overflow:hidden}
+.error-card.critical{background:rgba(244,63,94,0.08);border-color:rgba(244,63,94,0.25)}
+.error-card.major{background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.2)}
+.error-card.minor{background:rgba(59,130,246,0.08);border-color:rgba(59,130,246,0.2)}
+.error-card-top{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.err-sev{font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em}
+.err-sev.critical{background:rgba(244,63,94,0.2);color:var(--red)}
+.err-sev.major{background:rgba(245,158,11,0.2);color:var(--amber)}
+.err-sev.minor{background:rgba(59,130,246,0.2);color:var(--blue)}
+.err-step{font-size:12px;font-weight:600}
+.err-found{font-family:var(--mono);font-size:11px;color:var(--sub2);margin-bottom:4px}
+.err-hint{font-size:11px;color:var(--sub2);line-height:1.5}
+.err-hint strong{color:var(--text);font-weight:500}
+.error-card.repeat-flag::after{content:'REPEAT';position:absolute;top:6px;right:8px;font-family:var(--mono);font-size:8px;font-weight:700;color:var(--red);letter-spacing:.1em;opacity:.7}
+
+/* ── REPEAT BANNER ── */
+#repeat-banner{display:none;background:linear-gradient(135deg,rgba(244,63,94,0.12),rgba(244,63,94,0.05));border:1px solid rgba(244,63,94,0.3);border-radius:12px;padding:12px 14px;animation:shake .4s ease}
+.rep-hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.rep-icon{font-size:16px}
+.rep-title{font-size:13px;font-weight:600;color:var(--red)}
+.rep-tag{font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(244,63,94,0.2);color:var(--red);letter-spacing:.06em}
+.rep-item{padding:6px 0;border-top:1px solid rgba(244,63,94,0.1)}
+.rep-step{font-size:12px;font-weight:600;color:var(--red)}
+.rep-fix{font-size:11px;color:var(--sub2);margin-top:2px;line-height:1.5}
+.rep-count{font-family:var(--mono);font-size:9px;color:var(--sub);margin-top:2px}
+
+/* ── CORRECT BANNER ── */
+#correct-banner{display:none;background:linear-gradient(135deg,rgba(0,214,143,0.12),rgba(0,214,143,0.04));border:1px solid rgba(0,214,143,0.3);border-radius:12px;padding:14px;text-align:center;animation:pop-in .4s cubic-bezier(.34,1.56,.64,1)}
+.correct-icon{font-size:32px;margin-bottom:4px}
+.correct-text{font-size:16px;font-weight:700;color:var(--green)}
+.correct-sub{font-size:11px;color:var(--sub);margin-top:2px;font-family:var(--mono)}
+
+/* ── BOXED ANSWER ── */
+#boxed-wrap{display:none;border-radius:10px;padding:10px 14px;border:1px solid}
+#boxed-wrap.correct{background:rgba(0,214,143,0.08);border-color:rgba(0,214,143,0.3)}
+#boxed-wrap.incorrect{background:rgba(244,63,94,0.08);border-color:rgba(244,63,94,0.3)}
+.boxed-label{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);margin-bottom:4px}
+.boxed-val{font-size:15px;font-weight:700;font-family:var(--mono)}
+.boxed-verdict{font-size:11px;color:var(--sub2);margin-top:3px}
+
+/* ── SESSION BLOCKS ── */
+.session-blocks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sblock{background:var(--bg3);border-radius:10px;padding:10px;text-align:center}
+.sblock-val{font-size:22px;font-weight:700;font-family:var(--mono);line-height:1}
+.sblock-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--sub);margin-top:3px}
+
+/* ── FOCUS CHART ── */
+.chart-wrap{position:relative;height:90px}
+
+/* ── HISTORY FEED ── */
+.hist-feed{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto}
+.hist-item{display:flex;align-items:flex-start;gap:8px;padding:6px 8px;background:var(--bg3);border-radius:7px;font-size:11px}
+.hist-time{font-family:var(--mono);font-size:9px;color:var(--sub);flex-shrink:0;margin-top:1px}
+.hist-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.hist-text{color:var(--sub2);line-height:1.4}
+.hist-text strong{color:var(--text)}
+
+/* ── ANALYSIS SECTION ── */
+.analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;padding:1.5rem 2rem}
+.analysis-full{padding:0 2rem 1.5rem}
+.chart-tall{position:relative;height:200px}
+
+/* ── PARENT PORTAL ── */
+.portal-outer{min-height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center}
+.portal-lock-card{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:2.5rem;width:340px;text-align:center}
+.portal-lock-icon{font-size:40px;margin-bottom:1rem}
+.portal-lock-title{font-size:22px;font-weight:700;margin-bottom:.5rem}
+.portal-lock-sub{font-size:13px;color:var(--sub);margin-bottom:1.5rem}
+.pin-dots{display:flex;justify-content:center;gap:12px;margin-bottom:1.5rem}
+.pin-dot{width:14px;height:14px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);transition:all .2s}
+.pin-dot.filled{background:var(--green);border-color:var(--green);box-shadow:0 0 10px rgba(0,214,143,0.4)}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem}
+.pin-key{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:18px;font-weight:500;height:52px;border-radius:10px;cursor:pointer;transition:all .15s}
+.pin-key:hover{background:var(--bg4);border-color:var(--border2)}
+.pin-key:active{transform:scale(.95)}
+.pin-error{font-size:12px;color:var(--red);min-height:18px;font-family:var(--mono)}
+.pin-hint{font-size:11px;color:var(--sub);margin-top:8px;font-family:var(--mono)}
+.portal-dash{display:none}
+.portal-dash.visible{display:block;padding:1.5rem 2rem}
+.portal-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
+.portal-hd h2{font-size:20px;font-weight:700}
+.portal-hd p{font-size:12px;color:var(--sub);margin-top:2px}
+.portal-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.pstat{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.25rem;text-align:center}
+.pval{font-size:28px;font-weight:700;font-family:var(--mono);line-height:1}
+.pval.green{color:var(--green)}
+.pval.red{color:var(--red)}
+.pval.blue{color:var(--blue)}
+.pval.amber{color:var(--amber)}
+.plbl{font-size:11px;color:var(--sub);margin-top:6px;text-transform:uppercase;letter-spacing:.05em}
+.portal-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+
+/* ── ALERTS ── */
+.alert-feed{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto}
+.alert-item{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;border-left:3px solid;font-size:12px}
+.alert-item.danger{background:rgba(244,63,94,0.07);border-color:var(--red)}
+.alert-item.warn{background:rgba(245,158,11,0.07);border-color:var(--amber)}
+.alert-item.ok{background:rgba(0,214,143,0.07);border-color:var(--green)}
+.alert-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.alert-title{font-weight:600;margin-bottom:2px}
+.alert-desc{color:var(--sub2);font-size:11px}
+.alert-time{font-family:var(--mono);font-size:9px;color:var(--sub);margin-top:2px}
+
+/* ── BUTTONS ── */
+.btn{font-family:var(--font);font-size:13px;font-weight:500;padding:8px 18px;border-radius:8px;border:none;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn-green{background:var(--green);color:#000}
+.btn-red{background:var(--red);color:#fff}
+.btn-ghost{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--bg4);filter:none}
+.btn-sm{font-size:11px;padding:5px 12px}
+
+/* ── ANIMATIONS ── */
+@keyframes pulse-green{0%,100%{box-shadow:0 0 6px var(--green)}50%{box-shadow:0 0 14px var(--green),0 0 24px var(--green)}}
+@keyframes stuck-pulse{0%{opacity:1}100%{opacity:.6}}
+@keyframes slide-in-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pop-in{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-5px)}30%{transform:translateX(4px)}45%{transform:translateX(-3px)}60%{transform:translateX(2px)}}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes analyzing-pulse{0%,100%{opacity:.6}50%{opacity:1}}
+
+/* ── MISC ── */
+.divider{height:1px;background:var(--border);margin:.25rem 0}
+.tag{font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em}
+.analyzing-indicator{display:none;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--blue);animation:analyzing-pulse 1.2s infinite}
+.analyzing-indicator.active{display:flex}
+.analyzing-dot{width:6px;height:6px;border-radius:50%;background:var(--blue);animation:analyzing-pulse 1.2s infinite}
+.no-errors-state{text-align:center;padding:1.5rem;color:var(--sub);font-size:12px}
+.no-errors-icon{font-size:28px;margin-bottom:6px}
+.empty-chart-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;color:var(--sub)}
+
+/* ── TOAST NOTIFICATIONS ── */
+#toast-stack{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none}
+.toast{display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-radius:10px;border:1px solid;font-size:13px;min-width:280px;max-width:360px;pointer-events:all;animation:toast-in .3s cubic-bezier(.34,1.56,.64,1);backdrop-filter:blur(16px)}
+.toast.out{animation:toast-out .25s ease forwards}
+.toast.error{background:rgba(244,63,94,0.12);border-color:rgba(244,63,94,0.3);color:var(--text)}
+.toast.warn{background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.3);color:var(--text)}
+.toast.success{background:rgba(0,214,143,0.12);border-color:rgba(0,214,143,0.3);color:var(--text)}
+.toast.info{background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.3);color:var(--text)}
+.toast-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.toast-body .toast-title{font-weight:600;margin-bottom:2px}
+.toast-body .toast-msg{font-size:11px;color:var(--sub2)}
+.toast-close{margin-left:auto;cursor:pointer;color:var(--sub);font-size:14px;flex-shrink:0;opacity:.7;padding:0 2px}
+.toast-close:hover{opacity:1}
+@keyframes toast-in{from{opacity:0;transform:translateX(20px) scale(.95)}to{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes toast-out{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(20px)}}
+
+/* ── KEYBOARD SHORTCUT BAR ── */
+#kbd-bar{position:fixed;bottom:0;left:0;right:0;z-index:150;height:32px;background:rgba(7,8,15,0.9);backdrop-filter:blur(12px);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 2rem;gap:20px;font-family:var(--mono);font-size:10px;color:var(--sub)}
+.kbd-item{display:flex;align-items:center;gap:5px}
+.kbd{background:var(--bg3);border:1px solid var(--border2);border-radius:4px;padding:1px 6px;font-size:9px;color:var(--sub2)}
+#kbd-bar .kbd-sep{opacity:.3}
+
+/* ── SCAN COUNTDOWN ── */
+#scan-countdown{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:4px 12px;font-family:var(--mono);font-size:10px;color:var(--sub2);display:block;white-space:nowrap;z-index:2;transition:color .3s}
+.scan-cd-bar{position:absolute;bottom:0;left:0;height:2px;background:var(--blue);border-radius:1px;transition:width 1s linear}
+
+/* ── PROGRESS STEPS ── */
+.step-row{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border)}
+.step-row:last-child{border-bottom:none}
+.step-num{font-family:var(--mono);font-size:10px;color:var(--sub);width:44px;flex-shrink:0}
+.step-content{font-size:12px;flex:1;color:var(--sub2)}
+.step-icon{font-size:14px;flex-shrink:0}
+
+/* ── LIVE PULSE RING ── */
+@keyframes live-ring{0%{box-shadow:0 0 0 0 rgba(0,214,143,0.4)}70%{box-shadow:0 0 0 8px rgba(0,214,143,0)}100%{box-shadow:0 0 0 0 rgba(0,214,143,0)}}
+.nav-logo-dot{animation:live-ring 2s infinite,pulse-green 2s infinite}
+
+/* ── REFLECTION OVERLAY ── */
+#reflection-overlay{display:none;position:fixed;inset:0;z-index:500;background:rgba(7,8,15,0.92);backdrop-filter:blur(20px);align-items:center;justify-content:center}
+#reflection-overlay.show{display:flex}
+.reflection-card{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:2.5rem;width:480px;max-width:90vw;animation:pop-in .4s cubic-bezier(.34,1.56,.64,1)}
+.ref-title{font-size:26px;font-weight:700;margin-bottom:.25rem}
+.ref-sub{font-size:13px;color:var(--sub);margin-bottom:1.5rem}
+.ref-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem}
+.ref-stat{text-align:center;background:var(--bg3);border-radius:10px;padding:1rem}
+.ref-val{font-size:28px;font-weight:700;font-family:var(--mono);line-height:1}
+.ref-lbl{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+.ref-question{font-size:13px;color:var(--sub2);margin-bottom:.75rem}
+.ref-textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px;padding:10px 12px;resize:none;outline:none;margin-bottom:1rem;line-height:1.6}
+.ref-textarea:focus{border-color:var(--green)}
+.ref-footer{display:flex;gap:10px}
+
+/* ── NEXT SCAN CARD ── */
+.scan-next-label{font-family:var(--mono);font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.scan-next-bar{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:4px}
+.scan-next-fill{height:100%;background:var(--blue);border-radius:2px;transition:width 1s linear}
+
+/* ── AMBIENT GLOW STATES ── */
+body.state-stuck::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse at 50% 0%,rgba(244,63,94,0.06) 0%,transparent 60%);animation:stuck-pulse .8s infinite alternate}
+body.state-flow::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse at 50% 0%,rgba(0,214,143,0.04) 0%,transparent 60%)}
+
+/* ── STUDY SECTION ── */
+.study-header{padding:1.5rem 2rem 1rem;border-bottom:1px solid var(--border)}
+.study-header h2{font-size:20px;font-weight:700;margin-bottom:3px}
+.study-header p{font-size:12px;color:var(--sub)}
+.study-body{padding:1.5rem 2rem;display:flex;flex-direction:column;gap:1.5rem}
+.study-topic-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 12px;border-radius:999px;text-transform:uppercase;letter-spacing:.06em}
+.study-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
+.study-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:1.25rem;position:relative;overflow:hidden;transition:border-color .2s,transform .2s}
+.study-card:hover{border-color:var(--border2);transform:translateY(-2px)}
+.study-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0}
+.study-card.algebra::before{background:linear-gradient(90deg,var(--blue),var(--purple))}
+.study-card.arithmetic::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
+.study-card.geometry::before{background:linear-gradient(90deg,var(--amber),var(--red))}
+.study-card.concept::before{background:linear-gradient(90deg,var(--purple),var(--blue))}
+.study-card-icon{font-size:24px;margin-bottom:8px}
+.study-card-title{font-size:14px;font-weight:700;margin-bottom:6px}
+.study-card-body{font-size:12px;color:var(--sub2);line-height:1.7}
+.study-card-body strong{color:var(--text)}
+.example-block{background:var(--bg3);border-radius:8px;padding:10px 12px;margin-top:10px;font-family:var(--mono);font-size:11px;line-height:1.8;border-left:3px solid var(--blue)}
+.example-block .ex-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);margin-bottom:4px}
+.mistake-card{background:rgba(244,63,94,0.06);border:1px solid rgba(244,63,94,0.2);border-radius:12px;padding:1rem 1.25rem}
+.mistake-card-hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.mistake-card-title{font-size:13px;font-weight:700;color:var(--red)}
+.mistake-item{padding:8px 0;border-top:1px solid rgba(244,63,94,0.1);font-size:12px}
+.mistake-item:first-of-type{border-top:none;padding-top:0}
+.mistake-step{font-weight:600;color:var(--red);margin-bottom:3px}
+.mistake-fix{color:var(--sub2);line-height:1.6}
+.mistake-fix strong{color:var(--green)}
+.no-mistakes{text-align:center;padding:2rem;background:rgba(0,214,143,0.05);border:1px solid rgba(0,214,143,0.2);border-radius:12px;color:var(--green)}
+
+/* ── GAMES SECTION ── */
+.games-header{padding:1.5rem 2rem 1rem;border-bottom:1px solid var(--border)}
+.games-header h2{font-size:20px;font-weight:700;margin-bottom:3px}
+.games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;padding:1.5rem 2rem}
+.game-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden;transition:transform .2s,border-color .2s;cursor:pointer}
+.game-card:hover{transform:translateY(-3px);border-color:var(--border2)}
+.game-card-banner{height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;position:relative}
+.game-card-body{padding:1.25rem}
+.game-card-title{font-size:16px;font-weight:700;margin-bottom:4px}
+.game-card-desc{font-size:12px;color:var(--sub2);line-height:1.6;margin-bottom:12px}
+.game-card-meta{display:flex;align-items:center;justify-content:space-between}
+.game-card-tag{font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:4px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.game-card-hs{font-family:var(--mono);font-size:10px;color:var(--sub)}
+/* Game Modal */
+#game-modal{display:none;position:fixed;inset:0;z-index:600;background:rgba(7,8,15,0.95);backdrop-filter:blur(20px);align-items:center;justify-content:center}
+#game-modal.show{display:flex}
+.game-modal-inner{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;width:540px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:pop-in .35s cubic-bezier(.34,1.56,.64,1)}
+.gm-header{display:flex;align-items:center;justify-content:space-between;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border)}
+.gm-title{font-size:18px;font-weight:700}
+.gm-close{background:none;border:none;color:var(--sub);font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px}
+.gm-close:hover{color:var(--text);background:var(--bg3)}
+.gm-body{padding:1.5rem}
+/* Math Sprint game */
+.sprint-score-row{display:flex;justify-content:space-between;margin-bottom:1.5rem;font-family:var(--mono)}
+.sprint-stat{text-align:center}
+.sprint-stat-val{font-size:28px;font-weight:700;line-height:1}
+.sprint-stat-lbl{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+.sprint-question{text-align:center;font-size:36px;font-weight:700;font-family:var(--mono);color:var(--cyan);margin:1.5rem 0;letter-spacing:2px;min-height:50px}
+.sprint-input{width:100%;text-align:center;background:var(--bg3);border:2px solid var(--border2);border-radius:10px;color:var(--text);font-family:var(--mono);font-size:24px;font-weight:700;padding:12px;outline:none;transition:border-color .2s}
+.sprint-input:focus{border-color:var(--cyan)}
+.sprint-input.correct{border-color:var(--green);background:rgba(0,214,143,0.05)}
+.sprint-input.wrong{border-color:var(--red);animation:shake .3s ease;background:rgba(244,63,94,0.05)}
+.sprint-timer-bar{height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-top:1rem}
+.sprint-timer-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--cyan));border-radius:3px;transition:width .5s linear,background .5s}
+/* Breathing game */
+.breath-circle{width:200px;height:200px;border-radius:50%;margin:1.5rem auto;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;font-family:var(--mono);color:var(--text);background:radial-gradient(circle,rgba(59,130,246,0.2),rgba(59,130,246,0.05));border:2px solid rgba(59,130,246,0.3);transition:transform 4s ease,border-color 1s,background 1s;position:relative}
+.breath-ring{position:absolute;inset:-12px;border-radius:50%;border:2px solid rgba(59,130,246,0.15);transition:transform 4s ease}
+@keyframes breath-in{0%{transform:scale(1)}100%{transform:scale(1.5)}}
+@keyframes breath-out{0%{transform:scale(1.5)}100%{transform:scale(1)}}
+.breath-phase{text-align:center;font-size:22px;font-weight:700;margin:1rem 0 4px;color:var(--blue)}
+.breath-sub{text-align:center;font-size:13px;color:var(--sub);font-family:var(--mono)}
+.breath-cycles{text-align:center;font-family:var(--mono);font-size:12px;color:var(--sub2);margin-top:1rem}
+/* Memory Grid */
+.mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:1rem 0}
+.mcard{aspect-ratio:1;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;font-family:var(--mono);cursor:pointer;transition:all .3s;user-select:none}
+.mcard.flipped{background:var(--bg4);border-color:var(--blue)}
+.mcard.matched{background:rgba(0,214,143,0.12);border-color:var(--green);color:var(--green)}
+.mcard.wrong{background:rgba(244,63,94,0.1);border-color:var(--red);animation:shake .3s ease}
+
+/* ── WEEKLY REPORT ── */
+.weekly-section{padding:0 2rem 2rem}
+.weekly-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem}
+.week-stat{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1rem;text-align:center}
+.week-val{font-size:26px;font-weight:700;font-family:var(--mono);line-height:1}
+.week-lbl{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-top:4px}
+.week-delta{font-family:var(--mono);font-size:10px;margin-top:3px}
+.week-delta.up{color:var(--green)}
+.week-delta.down{color:var(--red)}
+.report-btn{font-family:var(--font);font-size:12px;font-weight:500;padding:8px 16px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.report-btn:hover{background:var(--bg4);transform:translateY(-1px)}
+</style>
+</head>
+<body>
+
+<!-- TOAST STACK -->
+<div id="toast-stack"></div>
+
+<!-- KEYBOARD BAR -->
+<div id="kbd-bar">
+  <div class="kbd-item"><kbd class="kbd">SPACE</kbd><span style="color:var(--green)">Speak errors</span></div>
+  <span class="kbd-sep">·</span>
+  <div class="kbd-item"><kbd class="kbd">S</kbd><span>Force scan</span></div>
+  <span class="kbd-sep">·</span>
+  <div class="kbd-item"><kbd class="kbd">R</kbd><span>Reflection</span></div>
+  <span class="kbd-sep">·</span>
+  <div class="kbd-item"><kbd class="kbd">Q</kbd><span>Quit CV</span></div>
+  <div id="kbd-status" style="margin-left:auto;color:var(--sub)">FlowState AI · GPT-4o Vision + Claude Sonnet · VikingHacks 2025</div>
+</div>
+
+<!-- REFLECTION OVERLAY -->
+<div id="reflection-overlay">
+  <div class="reflection-card">
+    <div class="ref-title">Session Complete 🎉</div>
+    <div class="ref-sub">Here's how your study session went</div>
+    <div class="ref-stats">
+      <div class="ref-stat"><div class="ref-val sv-green" id="ref-working">—</div><div class="ref-lbl">Working</div></div>
+      <div class="ref-stat"><div class="ref-val sv-red" id="ref-distracted">—</div><div class="ref-lbl">Distracted</div></div>
+      <div class="ref-stat"><div class="ref-val sv-blue" id="ref-focus">—</div><div class="ref-lbl">Avg Focus</div></div>
+    </div>
+    <div id="ref-errors-wrap" style="display:none;margin-bottom:1rem;background:var(--bg3);border-radius:8px;padding:10px 12px">
+      <div style="font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;font-family:var(--mono)">Errors this session</div>
+      <div id="ref-errors-list" style="font-size:12px;color:var(--sub2)"></div>
+    </div>
+    <div class="ref-question">What was the most satisfying thing you figured out today?</div>
+    <textarea class="ref-textarea" id="ref-input" rows="3" placeholder="e.g. Finally understood why the minus sign flips when dividing by a negative…"></textarea>
+    <div class="ref-footer">
+      <button class="btn btn-green" style="flex:1" onclick="closeReflection()">Save &amp; Finish ✓</button>
+      <button class="btn btn-ghost" onclick="closeReflection()">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">
+    <div class="nav-logo-dot"></div>
+    FlowState
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showSection('monitor',this)">Monitor</button>
+    <button class="nav-tab" onclick="showSection('study',this)">Study</button>
+    <button class="nav-tab" onclick="showSection('games',this)">Games</button>
+    <button class="nav-tab" onclick="showSection('analysis',this)">Analysis</button>
+    <button class="nav-tab" onclick="showSection('parent',this)">Parent Portal</button>
+  </div>
+  <div class="nav-right">
+    <div class="conn-badge offline" id="conn-badge">
+      <div class="conn-dot"></div>
+      <span id="conn-text">Connecting…</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════════ MONITOR ════════════════════════════════════ -->
+<div id="sec-monitor" class="section active">
+
+  <!-- TOP STRIP -->
+  <div class="top-strip">
+    <div class="strip-item">
+      <span class="strip-lbl">Working</span>
+      <span class="strip-val sv-green" id="s-working">00:00</span>
+    </div>
+    <div class="strip-item">
+      <span class="strip-lbl">Distracted</span>
+      <span class="strip-val sv-red" id="s-distracted">00:00</span>
+    </div>
+    <div class="strip-item">
+      <span class="strip-lbl">Session</span>
+      <span class="strip-val sv-blue" id="s-total">00:00</span>
+    </div>
+    <div class="strip-item">
+      <span class="strip-lbl">Focus</span>
+      <span class="strip-val sv-green" id="s-focus">—</span>
+    </div>
+    <div class="strip-item">
+      <span class="strip-lbl">Errors</span>
+      <span class="strip-val" id="s-errors">0</span>
+    </div>
+    <div class="strip-item" id="strip-question" style="display:none">
+      <span class="strip-lbl">Q</span>
+      <span class="strip-val sv-blue" id="s-question" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">—</span>
+    </div>
+    <div class="strip-state">
+      <div class="state-dot-sm sds-standby" id="state-dot"></div>
+      <div class="state-pill standby" id="state-pill">STANDBY</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="main-grid">
+
+    <!-- LEFT COLUMN -->
+    <div class="col-left">
+
+      <!-- CAMERA -->
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="video-wrap" id="video-wrap">
+          <video id="webcam" autoplay playsinline muted></video>
+          <div id="cam-placeholder" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg1);z-index:1;gap:12px">
+            <div style="font-size:40px">📷</div>
+            <div style="font-family:var(--mono);font-size:13px;color:var(--sub2)">Connecting to camera…</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--sub)" id="cam-ph-status">Make sure vision_tutor.py is running</div>
+          </div>
+          <div class="vid-overlay">
+            <div class="scan-ring" id="scan-ring"></div>
+            <div class="vid-tl">
+              <div class="vid-chip live-green" id="cam-chip">● CAM STANDBY</div>
+              <div class="analyzing-indicator" id="analyzing-ind">
+                <div class="analyzing-dot"></div>
+                SCANNING…
+              </div>
+            </div>
+            <div class="vid-tr">
+              <div class="vid-chip blue" id="backend-chip" style="display:none">⚡ BACKEND LIVE</div>
+            </div>
+            <div class="vid-bl">
+              <div class="vid-chip" id="score-chip" style="display:none"></div>
+              <div class="vid-chip amber" id="popup-chip" style="display:none">🧠 TUTOR OPEN</div>
+            </div>
+          </div>
+          <div id="scan-countdown" class="visible">Next scan: —</div>
+        </div>
+        <div class="question-strip" id="question-strip" style="display:none">
+          <span>Q</span><span id="question-text">—</span>
+        </div>
+      </div>
+
+      <!-- WHILE ANALYZING CARD -->
+      <div id="analyzing-card" style="display:none;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(167,139,250,0.06));border:1px solid rgba(59,130,246,0.25);border-radius:12px;padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--blue);animation:analyzing-pulse 1s infinite flex-shrink:0"></div>
+          <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em">AI Scanning your work…</span>
+        </div>
+        <div id="analyzing-tip" style="font-size:12px;color:var(--sub2);line-height:1.7"></div>
+      </div>
+
+      <!-- ERRORS CARD -->
+      <div class="card" id="errors-card" style="display:none">
+        <div class="card-hd">
+          <span class="card-title">Mistakes Detected</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="tag" style="background:rgba(244,63,94,0.15);color:var(--red)" id="err-count-tag">0 found</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('error-list').querySelectorAll('details').forEach(d=>d.open=!d.open)" title="Toggle all">↕</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('errors-card').style.display='none'" title="Dismiss">✕</button>
+          </div>
+        </div>
+        <div class="error-list" id="error-list"></div>
+      </div>
+
+      <!-- BOXED ANSWER (only shown after box detected) -->
+      <div id="boxed-wrap" style="display:none">
+        <div class="boxed-label">Boxed Answer</div>
+        <div class="boxed-val" id="boxed-val">—</div>
+        <div class="boxed-verdict" id="boxed-verdict">—</div>
+      </div>
+
+      <!-- REPEAT BANNER -->
+      <div id="repeat-banner" style="display:none">
+        <div class="rep-hd">
+          <span class="rep-icon">⚠️</span>
+          <span class="rep-title">Repeated Mistake</span>
+          <span class="rep-tag">SEEN BEFORE</span>
+        </div>
+        <div id="repeat-list"></div>
+      </div>
+
+      <!-- ERROR HISTORY -->
+      <div class="card" id="hist-card" style="display:none">
+        <div class="card-hd">
+          <span class="card-title">Error History</span>
+          <span class="tag" style="background:var(--bg4);color:var(--sub2)" id="hist-count">0 total</span>
+        </div>
+        <div class="hist-feed" id="hist-feed"></div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="col-right">
+
+      <!-- FOCUS RING -->
+      <div class="card">
+        <div class="card-hd" style="margin-bottom:.75rem">
+          <span class="card-title">Problem Score</span>
+          <span class="tag" style="background:var(--bg4);color:var(--sub2);font-size:9px" id="vision-score-tag">Awaiting scan…</span>
+        </div>
+        <div class="focus-ring-wrap">
+          <canvas id="focus-ring-chart" width="140" height="140"></canvas>
+          <div class="focus-ring-center">
+            <div class="focus-number" id="focus-number" style="color:var(--sub)">—</div>
+            <div class="focus-label" id="focus-label">awaiting</div>
+          </div>
+        </div>
+        <div style="text-align:center;font-size:11px;color:var(--sub);margin-top:6px;font-family:var(--mono)" id="score-detail">Point camera at your work to begin</div>
+        <!-- accuracy bar -->
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--sub);margin-bottom:4px">
+            <span>Accuracy</span><span id="acc-pct-lbl">—</span>
+          </div>
+          <div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden">
+            <div id="acc-bar" style="height:100%;border-radius:2px;width:0%;transition:width .6s cubic-bezier(.4,0,.2,1),background .5s"></div>
+          </div>
+        </div>
+        <div class="score-row">
+          <div class="score-box">
+            <div class="score-big sv-green" id="r-working">00:00</div>
+            <div class="score-sub">Working</div>
+          </div>
+          <div style="width:1px;background:var(--border);align-self:stretch"></div>
+          <div class="score-box">
+            <div class="score-big sv-red" id="r-distracted">00:00</div>
+            <div class="score-sub">Distracted</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FIDGET -->
+      <div class="card">
+        <div class="card-hd" style="margin-bottom:.75rem">
+          <span class="card-title">Fidget Analysis</span>
+          <span class="tag" id="fidget-tag" style="background:var(--bg4);color:var(--sub2)">0</span>
+        </div>
+        <div class="gauge-row">
+          <div class="gauge-item">
+            <span class="gauge-lbl">TAP</span>
+            <div class="gauge-track"><div class="gauge-fill" id="g-tap" style="width:0%;background:var(--cyan)"></div></div>
+            <span class="gauge-val" id="gv-tap">0</span>
+          </div>
+          <div class="gauge-item">
+            <span class="gauge-lbl">VEL</span>
+            <div class="gauge-track"><div class="gauge-fill" id="g-vel" style="width:0%;background:var(--purple)"></div></div>
+            <span class="gauge-val" id="gv-vel">0</span>
+          </div>
+          <div class="gauge-item">
+            <span class="gauge-lbl">TEN</span>
+            <div class="gauge-track"><div class="gauge-fill" id="g-ten" style="width:0%;background:var(--amber)"></div></div>
+            <span class="gauge-val" id="gv-ten">0</span>
+          </div>
+          <div class="gauge-item">
+            <span class="gauge-lbl">RST</span>
+            <div class="gauge-track"><div class="gauge-fill" id="g-rst" style="width:0%;background:var(--red)"></div></div>
+            <span class="gauge-val" id="gv-rst">0</span>
+          </div>
+        </div>
+        <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--sub);text-align:center" id="fidget-status">Hand not detected</div>
+      </div>
+
+      <!-- STUCK TIMER -->
+      <div class="card" id="stuck-card">
+        <div class="card-hd" style="margin-bottom:.75rem">
+          <span class="card-title">Stuck Timer</span>
+          <span class="tag" id="stuck-tag" style="background:var(--bg4);color:var(--sub2)">0s</span>
+        </div>
+        <div class="stuck-wrap">
+          <div class="stuck-track">
+            <div class="stuck-fill" id="stuck-fill" style="width:0%;background:var(--green)"></div>
+          </div>
+          <div class="stuck-labels">
+            <span>0s</span>
+            <span id="stuck-threshold">12s threshold</span>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--sub);font-family:var(--mono)" id="stuck-status">Pencil moving freely</div>
+      </div>
+
+      <!-- FOCUS SPARKLINE -->
+      <div class="card">
+        <div class="card-hd" style="margin-bottom:.5rem">
+          <span class="card-title">Focus Over Time</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="sparkline-chart"></canvas>
+          <div class="empty-chart-msg" id="spark-empty">Waiting for data…</div>
+        </div>
+      </div>
+
+      <!-- NEXT SCAN -->
+      <div class="card" id="next-scan-card" style="display:none">
+        <div class="card-hd" style="margin-bottom:.5rem">
+          <span class="card-title">Next AI Scan</span>
+          <span class="tag" style="background:rgba(59,130,246,0.12);color:var(--blue)" id="next-scan-tag">—</span>
+        </div>
+        <div class="scan-next-bar"><div class="scan-next-fill" id="next-scan-fill" style="width:100%"></div></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--sub);margin-top:6px" id="next-scan-label">Periodic scan every 6s · press S to scan now</div>
+      </div>
+
+      <!-- SESSION END BUTTON -->
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:12px;border-color:rgba(244,63,94,0.2);color:var(--red)" onclick="triggerReflection()">■ End Session</button>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ STUDY ════════════════════════════════════ -->
+<div id="sec-study" class="section">
+  <div class="study-header">
+    <h2>📚 Study Materials</h2>
+    <p>Targeted resources based on your detected mistakes · updates live as you work</p>
+  </div>
+  <div class="study-body">
+
+    <!-- Current Mistakes Panel -->
+    <div>
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--sub2);margin-bottom:10px;font-family:var(--mono)">Current Session Mistakes</div>
+      <div id="study-mistakes-wrap">
+        <div class="no-mistakes">✅ No mistakes detected this session — great work!</div>
+      </div>
+    </div>
+
+    <!-- Topic Study Cards -->
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--sub2);font-family:var(--mono)">Study Cards</div>
+        <div id="study-topic-badge" class="study-topic-badge" style="background:rgba(59,130,246,0.12);color:var(--blue)">General</div>
+      </div>
+      <div class="study-grid" id="study-grid"><!-- filled by JS --></div>
+    </div>
+
+    <!-- Quick Tips -->
+    <div class="card">
+      <div class="card-hd"><span class="card-title">🎯 Pro Tips</span></div>
+      <div id="study-tips" style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--sub2);line-height:1.7">
+        <div>→ Always substitute your final answer back into the original equation to verify.</div>
+        <div>→ Show every step — even if it seems obvious. The AI checks each one.</div>
+        <div>→ Cross out any wrong attempts clearly before rewriting.</div>
+        <div>→ Draw a box around your final answer when done.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ GAMES ════════════════════════════════════ -->
+<div id="sec-games" class="section">
+  <div class="games-header">
+    <h2>🎮 Brain Reset Games</h2>
+    <p>Clear brain fog between problem sets · studies show short breaks boost retention by 23%</p>
+  </div>
+  <div class="games-grid">
+    <!-- Math Sprint -->
+    <div class="game-card" onclick="openGame('sprint')">
+      <div class="game-card-banner" style="background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(59,130,246,0.08))">⚡</div>
+      <div class="game-card-body">
+        <div class="game-card-title">Math Sprint</div>
+        <div class="game-card-desc">Solve equations as fast as you can. 60 seconds on the clock. Builds mental math speed and warms up your brain before a problem set.</div>
+        <div class="game-card-meta">
+          <span class="game-card-tag" style="background:rgba(34,211,238,0.15);color:var(--cyan)">Math · Timed</span>
+          <span class="game-card-hs" id="hs-sprint">Best: —</span>
+        </div>
+      </div>
+    </div>
+    <!-- Deep Focus Breathing -->
+    <div class="game-card" onclick="openGame('breath')">
+      <div class="game-card-banner" style="background:linear-gradient(135deg,rgba(167,139,250,0.12),rgba(59,130,246,0.08))">🧘</div>
+      <div class="game-card-body">
+        <div class="game-card-title">Deep Focus</div>
+        <div class="game-card-desc">4-7-8 guided breathing to reset focus. Reduces cortisol, sharpens attention. Do 3 cycles before tackling a hard problem.</div>
+        <div class="game-card-meta">
+          <span class="game-card-tag" style="background:rgba(167,139,250,0.15);color:var(--purple)">Focus · 2 min</span>
+          <span class="game-card-hs" id="hs-breath">Cycles: 0</span>
+        </div>
+      </div>
+    </div>
+    <!-- Memory Match -->
+    <div class="game-card" onclick="openGame('memory')">
+      <div class="game-card-banner" style="background:linear-gradient(135deg,rgba(0,214,143,0.12),rgba(34,211,238,0.08))">🃏</div>
+      <div class="game-card-body">
+        <div class="game-card-title">Memory Match</div>
+        <div class="game-card-desc">Match equations to their answers. Trains working memory and pattern recognition — key skills for multi-step algebra problems.</div>
+        <div class="game-card-meta">
+          <span class="game-card-tag" style="background:rgba(0,214,143,0.15);color:var(--green)">Memory · Pairs</span>
+          <span class="game-card-hs" id="hs-memory">Best: —</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TEACHING MODAL -->
+<div id="teach-modal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(7,8,15,0.96);backdrop-filter:blur(24px);align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:20px;width:600px;max-width:95vw;max-height:88vh;overflow-y:auto;animation:pop-in .35s cubic-bezier(.34,1.56,.64,1)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:16px;font-weight:700" id="teach-title">Step-by-Step Guide</div>
+        <div style="font-size:11px;color:var(--sub);font-family:var(--mono);margin-top:2px">AI tutor — guiding without giving the answer</div>
+      </div>
+      <button style="background:none;border:none;color:var(--sub);font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px" onclick="closeTeach()">✕</button>
+    </div>
+    <div id="teach-body" style="padding:1.5rem">
+      <div style="text-align:center;padding:2rem;color:var(--sub);font-family:var(--mono);font-size:12px">
+        <div style="font-size:24px;margin-bottom:10px;animation:analyzing-pulse 1s infinite">🧠</div>
+        Generating your personalized guide…
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GAME MODAL -->
+<div id="game-modal">
+  <div class="game-modal-inner">
+    <div class="gm-header">
+      <div class="gm-title" id="gm-title">Game</div>
+      <button class="gm-close" onclick="closeGame()">✕</button>
+    </div>
+    <div class="gm-body" id="gm-body"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ ANALYSIS ════════════════════════════════════ -->
+<div id="sec-analysis" class="section">
+  <div style="padding:1.5rem 2rem 0;border-bottom:1px solid var(--border)">
+    <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Session Analysis</h2>
+    <p style="font-size:12px;color:var(--sub)">Real-time breakdown of your study session</p>
+  </div>
+
+  <div class="analysis-grid" style="padding-top:1.5rem">
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Focus Timeline</span></div>
+      <div class="chart-tall"><canvas id="focus-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Working vs Distracted</span></div>
+      <div class="chart-tall"><canvas id="time-chart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="analysis-full" style="padding:0 2rem 1.5rem">
+    <div class="card">
+      <div class="card-hd">
+        <span class="card-title">Error Log</span>
+        <span class="tag" style="background:var(--bg4);color:var(--sub2)" id="errlog-count">0 errors this session</span>
+      </div>
+      <div id="error-log" style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto">
+        <div style="text-align:center;padding:2rem;color:var(--sub);font-size:12px;font-family:var(--mono)">No errors recorded yet</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="analysis-grid" style="padding-top:0">
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Fidget Over Time</span></div>
+      <div class="chart-tall"><canvas id="fidget-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-title">How FlowState Works</span></div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:12px;color:var(--sub2);line-height:1.6">
+        <div><span style="color:var(--green);font-weight:600">📷 Vision AI (GPT-4o)</span> — Scans your written work every 6 seconds. Flags errors with hints, never gives the answer.</div>
+        <div><span style="color:var(--purple);font-weight:600">✋ Hand Tracking (MediaPipe)</span> — Measures fidget in real time: tapping, velocity, tension, restlessness.</div>
+        <div><span style="color:var(--blue);font-weight:600">🧠 Focus Score</span> — Combines errors (−8 each), stuck time (−1/s > 5s), and fidget (−0.3 per pt > 50).</div>
+        <div><span style="color:var(--amber);font-weight:600">💬 Socratic Tutor</span> — When stuck 12s on an error, Claude opens a dialog. Guides, never answers.</div>
+        <div><span style="color:var(--cyan);font-weight:600">🔊 Audio Alerts</span> — Chime + Samantha TTS when new errors detected. Direct correction if same mistake repeats.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ PARENT PORTAL ════════════════════════════════════ -->
+<div id="sec-parent" class="section">
+  <div class="portal-outer" id="portal-lock-wrap">
+    <div class="portal-lock-card">
+      <div class="portal-lock-icon">🔒</div>
+      <div class="portal-lock-title">Parent Portal</div>
+      <div class="portal-lock-sub">Enter your 4-digit PIN to view live study data</div>
+      <div class="pin-dots">
+        <div class="pin-dot" id="pd0"></div>
+        <div class="pin-dot" id="pd1"></div>
+        <div class="pin-dot" id="pd2"></div>
+        <div class="pin-dot" id="pd3"></div>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="pinPress('1')">1</button>
+        <button class="pin-key" onclick="pinPress('2')">2</button>
+        <button class="pin-key" onclick="pinPress('3')">3</button>
+        <button class="pin-key" onclick="pinPress('4')">4</button>
+        <button class="pin-key" onclick="pinPress('5')">5</button>
+        <button class="pin-key" onclick="pinPress('6')">6</button>
+        <button class="pin-key" onclick="pinPress('7')">7</button>
+        <button class="pin-key" onclick="pinPress('8')">8</button>
+        <button class="pin-key" onclick="pinPress('9')">9</button>
+        <button class="pin-key" onclick="pinClear()" style="font-size:12px;color:var(--sub)">CLR</button>
+        <button class="pin-key" onclick="pinPress('0')">0</button>
+        <button class="pin-key" onclick="pinBack()">⌫</button>
+      </div>
+      <div class="pin-error" id="pin-error"></div>
+      <div class="pin-hint">Demo PIN: 1234</div>
+    </div>
+  </div>
+
+  <div class="portal-dash" id="portal-dash">
+    <div class="portal-hd">
+      <div>
+        <h2>👨‍👩‍👧 Parent Dashboard</h2>
+        <p>Live data from FlowState · <span style="font-family:var(--mono);color:var(--green)" id="portal-update">Waiting…</span></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="portalLock()">🔒 Lock</button>
+    </div>
+    <div class="portal-stats">
+      <div class="pstat"><div class="pval green" id="p-working">—</div><div class="plbl">Working</div></div>
+      <div class="pstat"><div class="pval blue" id="p-focus">—</div><div class="plbl">Focus Score</div></div>
+      <div class="pstat"><div class="pval amber" id="p-errors">0</div><div class="plbl">Errors Found</div></div>
+      <div class="pstat"><div class="pval red" id="p-distracted">—</div><div class="plbl">Distracted</div></div>
+    </div>
+    <div class="portal-grid">
+      <div class="card">
+        <div class="card-hd"><span class="card-title">🔔 Live Alerts</span></div>
+        <div class="alert-feed" id="portal-alerts">
+          <div style="text-align:center;padding:1rem;color:var(--sub);font-size:12px;font-family:var(--mono)">No alerts yet</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hd"><span class="card-title">Focus Over Time</span></div>
+        <div class="chart-tall"><canvas id="parent-focus-chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Weekly Report -->
+    <div class="weekly-section" style="margin-top:1.5rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <div>
+          <div style="font-size:16px;font-weight:700">📊 Weekly Report</div>
+          <div style="font-size:12px;color:var(--sub);margin-top:2px">Last 7 days · auto-generated</div>
+        </div>
+        <button class="report-btn" onclick="window.print()">🖨️ Print Report</button>
+      </div>
+      <div class="weekly-grid">
+        <div class="week-stat"><div class="week-val green" id="w-total-time">3h 42m</div><div class="week-lbl">Total Study Time</div><div class="week-delta up">↑ 18% vs last week</div></div>
+        <div class="week-stat"><div class="week-val blue" id="w-avg-score">84%</div><div class="week-lbl">Avg Problem Score</div><div class="week-delta up">↑ 6pts improvement</div></div>
+        <div class="week-stat"><div class="week-val amber" id="w-errors-fixed">12</div><div class="week-lbl">Errors Corrected</div><div class="week-delta up">↑ self-corrected 9</div></div>
+      </div>
+      <div class="portal-grid">
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Daily Study Minutes</span></div>
+          <div class="chart-tall"><canvas id="weekly-bar-chart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Error Category Breakdown</span></div>
+          <div class="chart-tall"><canvas id="weekly-pie-chart"></canvas></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-hd"><span class="card-title">📝 Parent Summary</span></div>
+        <div id="weekly-summary" style="font-size:13px;color:var(--sub2);line-height:1.9">
+          Your student showed <strong style="color:var(--green)">strong improvement</strong> this week.
+          Study sessions averaged <strong style="color:var(--text)">31 minutes</strong> per day with peak focus in the morning.
+          Most common mistake area: <strong style="color:var(--amber)">sign errors in algebra</strong> — appearing 4× this week, down from 7× last week.
+          The AI tutor intervened <strong style="color:var(--blue)">3 times</strong> with Socratic guidance.
+          <span style="color:var(--green)">Recommendation:</span> Continue current study schedule. Consider reviewing negative number rules.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════
+const BACKEND = 'http://localhost:5001';
+const STUCK_THRESHOLD = 12;
+
+let backendConnected  = false;
+let _lastErrors       = [];
+let _lastAllGood      = false;
+let _lastBoxedAnswer  = {};    // current boxed answer object from backend
+let _lastQuestion     = '';    // current locked question
+let _hasReceivedScan = false;   // true only after first real vision scan result
+let _sessionStart    = null;    // when we first got cam_ok data
+let _workingBase     = 0;       // backend working_seconds at last sync
+let _distractedBase  = 0;
+let _totalBase       = 0;
+let _lastSyncAt      = null;    // Date.now() at last backend sync
+let _lastCamOk       = false;
+let focusHistory     = [];
+let scoreHistory     = [];      // problem score over time
+let fidgetHistory    = [];
+let errorLog         = [];
+let portalAlerts     = [];
+let parentChartBuilt = false;
+let _retries         = 0;
+let _streamImgOk     = false;
+
+// ═══════════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════════════════
+function showSection(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('active');
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  if (id === 'analysis') refreshAnalysis();
+  if (id === 'parent' && parentChartBuilt) refreshParentChart();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════════════
+function fmt(s) {
+  s = Math.max(0, Math.round(s));
+  return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+function focusColor(v) {
+  if (v >= 75) return getComputedStyle(document.documentElement).getPropertyValue('--green').trim();
+  if (v >= 45) return getComputedStyle(document.documentElement).getPropertyValue('--amber').trim();
+  return getComputedStyle(document.documentElement).getPropertyValue('--red').trim();
+}
+function lerp(a,b,t){ return a+(b-a)*t; }
+
+// ═══════════════════════════════════════════════════════════════════
+//  CHARTS
+// ═══════════════════════════════════════════════════════════════════
+const chartDefaults = {
+  responsive:true, maintainAspectRatio:false,
+  plugins:{ legend:{display:false}, tooltip:{
+    backgroundColor:'rgba(13,14,28,0.95)',
+    titleColor:'#e2e8f0', bodyColor:'#94a3b8',
+    borderColor:'rgba(255,255,255,0.1)', borderWidth:1,
+    padding:8, cornerRadius:6
+  }},
+  animation:{ duration:300 }
+};
+
+// Problem score ring (doughnut)
+const ringCtx = document.getElementById('focus-ring-chart').getContext('2d');
+const focusRingChart = new Chart(ringCtx, {
+  type:'doughnut',
+  data:{ datasets:[{
+    data:[0,100],
+    backgroundColor:['#64748b','rgba(255,255,255,0.04)'],
+    borderWidth:0, borderRadius:4
+  }]},
+  options:{
+    ...chartDefaults,
+    cutout:'78%',
+    plugins:{...chartDefaults.plugins, tooltip:{enabled:false}},
+    animation:{duration:600,easing:'easeInOutQuart'}
+  }
+});
+
+// Sparkline (focus over time in sidebar)
+const sparkCtx = document.getElementById('sparkline-chart').getContext('2d');
+const sparklineChart = new Chart(sparkCtx, {
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[{
+      data:[],
+      borderColor:'#3b82f6',
+      backgroundColor:'rgba(59,130,246,0.08)',
+      borderWidth:2, pointRadius:0, fill:true, tension:.4
+    }]
+  },
+  options:{
+    ...chartDefaults,
+    scales:{
+      x:{display:false},
+      y:{min:0,max:100,display:false}
+    }
+  }
+});
+
+// Focus timeline (analysis tab)
+const focusCtx = document.getElementById('focus-chart').getContext('2d');
+const focusLineChart = new Chart(focusCtx, {
+  type:'line',
+  data:{labels:[],datasets:[{
+    label:'Focus',data:[],
+    borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,0.08)',
+    borderWidth:2,pointRadius:0,fill:true,tension:.4
+  }]},
+  options:{
+    ...chartDefaults,
+    scales:{
+      x:{ticks:{color:'#475569',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(255,255,255,0.04)'}},
+      y:{min:0,max:100,ticks:{color:'#475569',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(255,255,255,0.04)'}}
+    }
+  }
+});
+
+// Time doughnut (working vs distracted)
+const timeCtx = document.getElementById('time-chart').getContext('2d');
+const timeChart = new Chart(timeCtx, {
+  type:'doughnut',
+  data:{labels:['Working','Distracted'],datasets:[{
+    data:[1,0],
+    backgroundColor:['#00d68f','#f43f5e'],
+    borderWidth:0, borderRadius:4
+  }]},
+  options:{
+    ...chartDefaults,
+    cutout:'65%',
+    plugins:{...chartDefaults.plugins,legend:{display:true,labels:{color:'#94a3b8',font:{size:11},boxWidth:10,padding:12}}}
+  }
+});
+
+// Fidget chart
+const fidgetCtx = document.getElementById('fidget-chart').getContext('2d');
+const fidgetLineChart = new Chart(fidgetCtx, {
+  type:'line',
+  data:{labels:[],datasets:[{
+    label:'Fidget',data:[],
+    borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,0.08)',
+    borderWidth:2,pointRadius:0,fill:true,tension:.4
+  }]},
+  options:{
+    ...chartDefaults,
+    scales:{
+      x:{ticks:{color:'#475569',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(255,255,255,0.04)'}},
+      y:{min:0,max:100,ticks:{color:'#475569',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(255,255,255,0.04)'}}
+    }
+  }
+});
+
+// Parent focus chart (built on demand)
+let parentFocusChart = null;
+function buildParentChart() {
+  const ctx = document.getElementById('parent-focus-chart').getContext('2d');
+  parentFocusChart = new Chart(ctx, {
+    type:'line',
+    data:{labels:focusHistory.map((_,i)=>i),datasets:[{
+      label:'Focus',data:[...focusHistory],
+      borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,0.08)',
+      borderWidth:2,pointRadius:0,fill:true,tension:.4
+    }]},
+    options:{
+      ...chartDefaults,
+      scales:{
+        x:{display:false},
+        y:{min:0,max:100,ticks:{color:'#475569',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(255,255,255,0.04)'}}
+      }
+    }
+  });
+  parentChartBuilt = true;
+}
+function refreshParentChart() {
+  if (!parentFocusChart) return;
+  parentFocusChart.data.labels = focusHistory.map((_,i)=>i);
+  parentFocusChart.data.datasets[0].data = [...focusHistory];
+  parentFocusChart.update('none');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CLIENT-SIDE TIMER (interpolates between backend 0.5Hz pushes)
+// ═══════════════════════════════════════════════════════════════════
+function syncTimers(working, distracted, total) {
+  _workingBase    = working;
+  _distractedBase = distracted;
+  _totalBase      = total;
+  _lastSyncAt     = Date.now();
+}
+setInterval(() => {
+  if (!_lastSyncAt) return;
+  const elapsed = (Date.now() - _lastSyncAt) / 1000;
+  const w = _workingBase + (_lastCamOk ? Math.floor(elapsed) : 0);
+  const d = _distractedBase + (!_lastCamOk && _totalBase > 0 ? Math.floor(elapsed) : 0);
+  const t = _totalBase + Math.floor(elapsed);
+  setTimerDisplay(w, d, t);
+}, 500);
+
+function setTimerDisplay(w, d, t) {
+  document.getElementById('s-working').textContent    = fmt(w);
+  document.getElementById('s-distracted').textContent = fmt(d);
+  document.getElementById('s-total').textContent      = fmt(t);
+  document.getElementById('r-working').textContent    = fmt(w);
+  document.getElementById('r-distracted').textContent = fmt(d);
+  timeChart.data.datasets[0].data = [Math.max(w,1), Math.max(d,1)];
+  timeChart.update('none');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UPDATE FROM BACKEND
+// ═══════════════════════════════════════════════════════════════════
+function updateFromBackend(s) {
+  if (!s || !s.ts) return;
+
+  const st         = s.status_state || 'standby';
+  const fidget     = s.fidget ?? 0;
+  const stuck      = s.stuck_time ?? 0;
+  const errors     = s.errors || [];
+  const repeated   = s.repeated_errors || [];
+  const working    = s.working_seconds ?? 0;
+  const distracted = s.distracted_seconds ?? 0;
+  const total      = s.session_seconds ?? 0;
+  const camOk      = s.cam_ok;
+  const analyzing  = s.analyzing;
+  const errorHist  = s.error_history || [];
+  const visionScore = s.score;   // 0-100 from AI, null if no scan yet
+
+  _lastCamOk = camOk;
+
+  // ── CAMERA PLACEHOLDER ──
+  if (camOk) {
+    // Try to load the MJPEG stream if not already shown
+    if (!document.getElementById('webcam-stream')) {
+      switchToBackendStream();
+    } else if (_streamImgOk) {
+      const ph = document.getElementById('cam-placeholder');
+      if (ph) ph.style.display = 'none';
+    }
+  } else {
+    const ph = document.getElementById('cam-placeholder');
+    if (ph) {
+      ph.style.display = 'flex';
+      document.getElementById('cam-ph-status').textContent =
+        backendConnected ? 'Backend connected — camera initializing…' : 'Run: python3 vision_tutor.py';
+    }
+  }
+
+  // ── STATE PILL ──
+  document.getElementById('state-pill').className = `state-pill ${st}`;
+  document.getElementById('state-pill').textContent = st.toUpperCase();
+  document.getElementById('state-dot').className = `state-dot-sm sds-${st}`;
+
+  // ── TOP STRIP ERRORS ──
+  document.getElementById('s-errors').textContent = errors.length;
+  document.getElementById('s-errors').className   = `strip-val ${errors.length>0?'sv-red':'sv-green'}`;
+
+  // ── QUESTION ──
+  if (s.question) {
+    document.getElementById('strip-question').style.display = 'flex';
+    document.getElementById('s-question').textContent = s.question.length>55 ? s.question.slice(0,55)+'…' : s.question;
+    document.getElementById('question-strip').style.display = 'block';
+    document.getElementById('question-text').textContent = s.question.length>110 ? s.question.slice(0,110)+'…' : s.question;
+  }
+
+  // ── TIMERS (sync from backend, interpolated client-side) ──
+  syncTimers(working, distracted, total);
+  // Top strip focus uses focus_score (engagement), not vision score
+  const focusEng = s.focus_score ?? 0;
+  document.getElementById('s-focus').textContent = camOk ? focusEng+'%' : '—';
+  document.getElementById('s-focus').className   = `strip-val ${focusEng>=75?'sv-green':focusEng>=45?'sv-amber':'sv-red'}`;
+
+  // ── CAMERA CHIP ──
+  const camChip = document.getElementById('cam-chip');
+  camChip.textContent = camOk ? '● CAM LIVE' : '○ CAM OFFLINE';
+  camChip.className   = `vid-chip ${camOk?'live-green':'red'}`;
+
+  // ── ANALYZING ──
+  document.getElementById('analyzing-ind').className = `analyzing-indicator ${analyzing?'active':''}`;
+  document.getElementById('scan-ring').className     = `scan-ring ${analyzing?'active':''}`;
+
+  // ── POPUP CHIP ──
+  document.getElementById('popup-chip').style.display = s.popup_open ? 'block' : 'none';
+
+  // ── PROBLEM SCORE RING ──
+  // Use vision AI score (null = no scan yet), not focus_score
+  if (visionScore !== null && visionScore !== undefined) {
+    _hasReceivedScan = true;
+    const sc = visionScore;
+    const col = sc>=80?'#00d68f':sc>=55?'#f59e0b':'#f43f5e';
+    focusRingChart.data.datasets[0].data = [sc, 100-sc];
+    focusRingChart.data.datasets[0].backgroundColor = [col, 'rgba(255,255,255,0.04)'];
+    focusRingChart.update();
+    document.getElementById('focus-number').textContent = sc;
+    document.getElementById('focus-number').style.color = col;
+    document.getElementById('focus-label').textContent  = errors.length===0 ? '✓ clean' : `${errors.length} error${errors.length>1?'s':''}`;
+    document.getElementById('vision-score-tag').textContent = `Last scan ${sc}/100`;
+
+    const detail = errors.length===0
+      ? (sc >= 80 ? 'All steps correct 🎉' : 'Looking good so far')
+      : `${errors.length} mistake${errors.length>1?'s':''} detected — see below`;
+    document.getElementById('score-detail').textContent = detail;
+    document.getElementById('score-detail').style.color = errors.length===0?'var(--green)':'var(--amber)';
+
+    // Accuracy bar
+    const accBar = document.getElementById('acc-bar');
+    const accLbl = document.getElementById('acc-pct-lbl');
+    if (accBar) { accBar.style.width = sc+'%'; accBar.style.background = sc>=80?'var(--green)':sc>=55?'var(--amber)':'var(--red)'; }
+    if (accLbl) accLbl.textContent = sc+'%';
+
+    // Score chip on video
+    const chip = document.getElementById('score-chip');
+    chip.style.display  = 'block';
+    chip.textContent    = `${sc}/100`;
+    chip.className      = `vid-chip ${sc>=80?'live-green':sc>=55?'amber':'red'}`;
+
+    // Track score history (for sparkline + reflection)
+    scoreHistory.push(sc);
+    focusHistory.push(sc);
+    if (scoreHistory.length > 120) scoreHistory.shift();
+    if (focusHistory.length > 120) focusHistory.shift();
+    sparklineChart.data.labels = scoreHistory.map((_,i)=>i);
+    sparklineChart.data.datasets[0].data = [...scoreHistory];
+    sparklineChart.data.datasets[0].borderColor = sc>=75?'#00d68f':sc>=45?'#f59e0b':'#f43f5e';
+    sparklineChart.update('none');
+    document.getElementById('spark-empty').style.display = 'none';
+
+    // Analysis tab timeline
+    const tl = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit'});
+    focusLineChart.data.labels.push(tl);
+    focusLineChart.data.datasets[0].data.push(sc);
+    if (focusLineChart.data.labels.length > 60) { focusLineChart.data.labels.shift(); focusLineChart.data.datasets[0].data.shift(); }
+    focusLineChart.update('none');
+
+  } else if (!_hasReceivedScan) {
+    // Pre-scan neutral state
+    document.getElementById('focus-number').textContent = '—';
+    document.getElementById('focus-number').style.color = 'var(--sub)';
+    document.getElementById('focus-label').textContent  = analyzing ? 'scanning…' : 'awaiting';
+    document.getElementById('vision-score-tag').textContent = analyzing ? 'Scanning…' : 'Awaiting scan';
+    document.getElementById('score-detail').textContent = camOk ? 'Point camera at your work' : 'Camera offline';
+  }
+
+  // ── FIDGET ──
+  const tap = s.fidget_tapping ?? 0;
+  const vel = s.fidget_velocity ?? 0;
+  const ten = s.fidget_tension ?? 0;
+  const rst = s.fidget_restlessness ?? 0;
+  setGauge('tap', tap); setGauge('vel', vel);
+  setGauge('ten', ten); setGauge('rst', rst);
+  const fidgetTag = document.getElementById('fidget-tag');
+  fidgetTag.textContent = Math.round(fidget);
+  fidgetTag.style.background = fidget<35?'rgba(0,214,143,0.15)':fidget<65?'rgba(245,158,11,0.15)':'rgba(244,63,94,0.15)';
+  fidgetTag.style.color = fidget<35?'var(--green)':fidget<65?'var(--amber)':'var(--red)';
+  document.getElementById('fidget-status').textContent = camOk
+    ? (fidget<25?'Very calm — in the zone':fidget<50?'Slightly restless':fidget<75?'Noticeably fidgeting':'High agitation')
+    : 'Hand not detected';
+  document.getElementById('fidget-status').style.color = fidget<35?'var(--green)':fidget<65?'var(--amber)':'var(--red)';
+  if (camOk) {
+    fidgetHistory.push(Math.round(fidget));
+    if (fidgetHistory.length > 120) fidgetHistory.shift();
+    fidgetLineChart.data.labels = fidgetHistory.map((_,i)=>i);
+    fidgetLineChart.data.datasets[0].data = [...fidgetHistory];
+    fidgetLineChart.update('none');
+  }
+
+  // ── STUCK TIMER ──
+  const stuckPct = clamp(stuck / STUCK_THRESHOLD, 0, 1) * 100;
+  const sf = document.getElementById('stuck-fill');
+  sf.style.width      = stuckPct + '%';
+  sf.style.background = stuck<5?'var(--green)':stuck<10?'var(--amber)':'var(--red)';
+  document.getElementById('stuck-tag').textContent = stuck.toFixed(1)+'s';
+  const ss = document.getElementById('stuck-status');
+  if      (stuck < 2)              { ss.textContent='Pencil moving freely'; ss.style.color='var(--sub)'; }
+  else if (stuck < 8)              { ss.textContent=`Paused ${stuck.toFixed(0)}s`; ss.style.color='var(--amber)'; }
+  else if (stuck < STUCK_THRESHOLD){ ss.textContent='Stuck — tutor opening soon…'; ss.style.color='var(--red)'; }
+  else                             { ss.textContent='Tutor is active'; ss.style.color='var(--red)'; }
+
+  // ── ERRORS ──
+  const newErrors = errors.filter(e => !_lastErrors.some(p=>p.step===e.step&&p.found===e.found));
+  // Only show "all good" banner if we have received at least one scan with a score
+  const allGood = _hasReceivedScan && errors.length===0 && !s.blank && !s.analyzing && camOk;
+
+  // Portal alert on correct
+  if (allGood && !_lastAllGood) {
+    addPortalAlert('ok','✅','Answer Correct!', s.question ? s.question.slice(0,50) : 'All steps verified');
+  }
+  _lastAllGood = allGood;
+
+  // Analyzing card — show tips while scanning, hide otherwise
+  const analyzeCard = document.getElementById('analyzing-card');
+  const tipEl = document.getElementById('analyzing-tip');
+  if (analyzeCard) {
+    analyzeCard.style.display = analyzing ? 'block' : 'none';
+    if (analyzing && tipEl) tipEl.textContent = _nextAnalyzingTip();
+  }
+
+  // Errors card
+  if (errors.length > 0) {
+    document.getElementById('errors-card').style.display = 'block';
+    document.getElementById('err-count-tag').textContent = `${errors.length} found`;
+    document.getElementById('error-list').innerHTML = errors.map(e => {
+      const sev = e.severity||'major';
+      const isRepeat = repeated.some(r=>r.step===e.step&&r.found===e.found);
+      return `<details class="error-card ${sev}${isRepeat?' repeat-flag':''}" style="cursor:pointer">
+        <summary style="list-style:none;display:flex;align-items:center;gap:8px">
+          <span class="err-sev ${sev}">${sev}</span>
+          <span class="err-step" style="flex:1">${e.step||''}</span>
+          <span style="font-family:var(--mono);font-size:9px;color:var(--sub)">▾ expand</span>
+        </summary>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">
+          <div class="err-found">You wrote: <strong>${e.found||''}</strong></div>
+          ${e.hint?`<div class="err-hint" style="margin-top:4px"><strong>Hint:</strong> ${e.hint}</div>`:''}
+          ${e.correction&&isRepeat?`<div style="margin-top:6px;padding:6px 8px;background:rgba(244,63,94,0.1);border-radius:6px;font-size:11px;color:var(--red)"><strong>Fix:</strong> ${e.correction}</div>`:''}
+        </div>
+      </details>`;
+    }).join('');
+    document.getElementById('hist-card').style.display = 'block';
+  } else {
+    document.getElementById('errors-card').style.display = 'none';
+  }
+
+  // Repeat banner
+  const repBanner = document.getElementById('repeat-banner');
+  if (repeated.length > 0) {
+    repBanner.style.display = 'block';
+    repBanner.style.animation='none'; repBanner.offsetHeight; repBanner.style.animation='shake .4s ease';
+    document.getElementById('repeat-list').innerHTML = repeated.map(e => {
+      const fix = e.correction||e.hint||'';
+      return `<div class="rep-item">
+        <div class="rep-step">${e.step}</div>
+        ${fix?`<div class="rep-fix"><strong>How to fix:</strong> ${fix}</div>`:''}
+        <div class="rep-count">Seen ${e.repeat_count||'multiple'}× this session</div>
+      </div>`;
+    }).join('');
+  } else { repBanner.style.display='none'; }
+
+  // Boxed answer
+  const boxed = s.boxed_answer||{};
+  if (boxed.detected) {
+    const bw = document.getElementById('boxed-wrap');
+    bw.style.display = 'block';
+    const v = (boxed.verdict||'').toLowerCase();
+    bw.className = v==='correct'?'correct':v==='incorrect'?'incorrect':'';
+    document.getElementById('boxed-val').textContent    = boxed.value||'';
+    document.getElementById('boxed-val').style.color    = v==='correct'?'var(--green)':v==='incorrect'?'var(--red)':'var(--amber)';
+    const verdictLabel = v==='correct'?'✓ Correct':v==='incorrect'?`✗ Incorrect — ${boxed.reason||''}`:'⟳ Detected — press S to confirm';
+    document.getElementById('boxed-verdict').textContent= verdictLabel;
+    document.getElementById('boxed-verdict').style.color= v==='correct'?'var(--green)':v==='incorrect'?'var(--red)':'var(--amber)';
+  } else { document.getElementById('boxed-wrap').style.display='none'; }
+
+  // Error history feed
+  if (errorHist.length > 0) {
+    document.getElementById('hist-count').textContent = `${errorHist.length} total`;
+    document.getElementById('hist-feed').innerHTML = [...errorHist].reverse().slice(0,10).map(e=>{
+      const col = (e.severity||'major')==='critical'?'var(--red)':(e.severity)==='minor'?'var(--blue)':'var(--amber)';
+      return `<div class="hist-item"><span class="hist-time">${e.ts||''}</span><div class="hist-dot" style="background:${col}"></div><span class="hist-text"><strong>${e.step}</strong>: ${e.found||''}</span></div>`;
+    }).join('');
+  }
+
+  // Error log (analysis tab)
+  if (newErrors.length > 0) {
+    newErrors.forEach(e => { errorLog.unshift(e); addPortalAlert('danger','⚠️',`Error: ${e.step}`,e.hint||e.found||''); });
+    if (errorLog.length>50) errorLog=errorLog.slice(0,50);
+    renderErrorLog();
+  }
+
+  _lastErrors      = errors;
+  _lastBoxedAnswer = s.boxed_answer || {};
+  _lastQuestion    = s.question || _lastQuestion;
+
+  // Speak boxed verdict immediately via Web Speech the moment it's confirmed
+  if (_lastBoxedAnswer.detected) {
+    const bKey = `${_lastBoxedAnswer.verdict||'unconfirmed'}:${_lastBoxedAnswer.value}`;
+    if (bKey !== _lastBoxedToastKey) {
+      // triggerToasts will show the visual toast; we just handle the speech here
+      const v = (_lastBoxedAnswer.verdict || '').toLowerCase();
+      if (v === 'correct' || v === 'incorrect') {
+        // only auto-speak on confirmed verdicts
+        if (window.speechSynthesis && !window.speechSynthesis.speaking) {
+          const msg = v === 'correct'
+            ? `Answer correct! Well done.`
+            : `Your boxed answer is incorrect. Press H for a step-by-step explanation.`;
+          const u = new SpeechSynthesisUtterance(msg);
+          u.rate = 1.05;
+          window.speechSynthesis.speak(u);
+        }
+      }
+    }
+  }
+
+  // Parent portal
+  document.getElementById('p-working').textContent    = fmt(working);
+  document.getElementById('p-distracted').textContent = fmt(distracted);
+  document.getElementById('p-focus').textContent      = visionScore!=null ? visionScore+'%' : '—';
+  document.getElementById('p-errors').textContent     = errorLog.length;
+  const now2 = new Date();
+  document.getElementById('portal-update').textContent = `Updated ${now2.toLocaleTimeString()}`;
+  if (parentChartBuilt) refreshParentChart();
+}
+
+function setGauge(key, val) {
+  const pct = clamp(val, 0, 100);
+  document.getElementById(`g-${key}`).style.width = pct + '%';
+  document.getElementById(`gv-${key}`).textContent = Math.round(pct);
+}
+
+function renderErrorLog() {
+  const log = document.getElementById('error-log');
+  document.getElementById('errlog-count').textContent = `${errorLog.length} error${errorLog.length!==1?'s':''} this session`;
+  if (errorLog.length === 0) {
+    log.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--sub);font-size:12px;font-family:var(--mono)">No errors recorded yet</div>';
+    return;
+  }
+  log.innerHTML = errorLog.map(e => {
+    const sev = e.severity||'major';
+    return `<div class="hist-item" style="padding:10px 12px">
+      <span class="hist-time">${e.ts||''}</span>
+      <span class="err-sev ${sev}" style="flex-shrink:0">${sev.toUpperCase()}</span>
+      <span class="hist-text" style="flex:1"><strong>${e.step}</strong>: ${e.found||''}<br/><span style="font-size:10px;color:var(--sub)">${e.hint||''}</span></span>
+    </div>`;
+  }).join('');
+}
+
+function refreshAnalysis() {
+  renderErrorLog();
+  fidgetLineChart.update();
+  focusLineChart.update();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PORTAL ALERTS
+// ═══════════════════════════════════════════════════════════════════
+function addPortalAlert(type, icon, title, desc) {
+  portalAlerts.unshift({type,icon,title,desc,time:new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})});
+  if (portalAlerts.length > 20) portalAlerts.pop();
+  renderPortalAlerts();
+}
+function renderPortalAlerts() {
+  const feed = document.getElementById('portal-alerts');
+  if (portalAlerts.length === 0) {
+    feed.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--sub);font-size:12px;font-family:var(--mono)">No alerts yet</div>';
+    return;
+  }
+  feed.innerHTML = portalAlerts.slice(0,8).map(a =>
+    `<div class="alert-item ${a.type}">
+      <div class="alert-icon">${a.icon}</div>
+      <div><div class="alert-title">${a.title}</div><div class="alert-desc">${a.desc}</div><div class="alert-time">${a.time}</div></div>
+    </div>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  BACKEND CONNECTION
+// ═══════════════════════════════════════════════════════════════════
+function connectBackend() {
+  const es = new EventSource(`${BACKEND}/api/stream`);
+  const badge = document.getElementById('conn-badge');
+  const text  = document.getElementById('conn-text');
+
+  es.onopen = () => {
+    backendConnected = true;
+    _retries = 0;
+    badge.className = 'conn-badge live';
+    text.textContent = 'LIVE';
+    document.getElementById('backend-chip').style.display = 'block';
+    switchToBackendStream();
+  };
+
+  es.onmessage = ev => {
+    try { updateFromBackend(JSON.parse(ev.data)); } catch(e) {}
+  };
+
+  es.onerror = () => {
+    backendConnected = false;
+    es.close();
+    badge.className = 'conn-badge offline';
+    _retries++;
+    text.textContent = `Retry ${_retries}…`;
+    document.getElementById('backend-chip').style.display = 'none';
+    setTimeout(connectBackend, Math.min(8000, 800 * _retries));
+  };
+}
+
+function switchToBackendStream() {
+  const wrap = document.getElementById('video-wrap');
+  const old  = document.getElementById('webcam');
+  if (old && !document.getElementById('webcam-stream')) {
+    const img = document.createElement('img');
+    img.id = 'webcam-stream';
+    img.src = `${BACKEND}/api/video`;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+    img.onload  = () => { _streamImgOk = true; document.getElementById('cam-placeholder').style.display='none'; };
+    img.onerror = () => { _streamImgOk = false; };
+    wrap.replaceChild(img, old);
+  }
+}
+
+// Fallback browser camera
+async function initCamera() {
+  if (backendConnected) return;
+  try {
+    const resp = await fetch(`${BACKEND}/api/state`, { signal: AbortSignal.timeout(1500) });
+    if (resp.ok) { switchToBackendStream(); return; }
+  } catch(e) {}
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'user' } });
+    const vid = document.getElementById('webcam');
+    if (vid) vid.srcObject = stream;
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PIN PORTAL
+// ═══════════════════════════════════════════════════════════════════
+let pin = '', PIN = '1234';
+function pinPress(d) {
+  if (pin.length >= 4) return;
+  pin += d;
+  updatePinDots();
+  if (pin.length === 4) setTimeout(() => {
+    if (pin === PIN) unlockPortal();
+    else { document.getElementById('pin-error').textContent = 'Incorrect PIN'; pin=''; updatePinDots(); }
+  }, 180);
+}
+function pinBack() { pin=pin.slice(0,-1); document.getElementById('pin-error').textContent=''; updatePinDots(); }
+function pinClear() { pin=''; document.getElementById('pin-error').textContent=''; updatePinDots(); }
+function updatePinDots() {
+  for(let i=0;i<4;i++) document.getElementById('pd'+i).classList.toggle('filled', i<pin.length);
+}
+function unlockPortal() {
+  document.getElementById('portal-lock-wrap').style.display='none';
+  const dash = document.getElementById('portal-dash');
+  dash.classList.add('visible');
+  renderPortalAlerts();
+  buildParentChart();
+}
+function portalLock() {
+  pin=''; updatePinDots();
+  document.getElementById('pin-error').textContent='';
+  document.getElementById('portal-lock-wrap').style.display='flex';
+  document.getElementById('portal-dash').classList.remove('visible');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TOAST NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════════
+let _toastId = 0;
+function toast(type, title, msg, duration=4000) {
+  const id = ++_toastId;
+  const icons = { error:'🚨', warn:'⚠️', success:'✅', info:'⚡' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.id = `toast-${id}`;
+  el.innerHTML = `
+    <div class="toast-icon">${icons[type]||'💬'}</div>
+    <div class="toast-body"><div class="toast-title">${title}</div>${msg?`<div class="toast-msg">${msg}</div>`:''}</div>
+    <div class="toast-close" onclick="dismissToast(${id})">✕</div>`;
+  document.getElementById('toast-stack').appendChild(el);
+  if (duration > 0) setTimeout(() => dismissToast(id), duration);
+}
+function dismissToast(id) {
+  const el = document.getElementById(`toast-${id}`);
+  if (!el) return;
+  el.classList.add('out');
+  setTimeout(() => el.remove(), 250);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SCAN COUNTDOWN
+// ═══════════════════════════════════════════════════════════════════
+const SCAN_INTERVAL = 6;
+let _nextScanAt = Date.now() + SCAN_INTERVAL * 1000;
+let _lastNextIn = null;
+
+function updateScanCountdown(nextIn) {
+  if (nextIn === null || nextIn === undefined) return;
+  _nextScanAt = Date.now() + nextIn * 1000;
+  _lastNextIn = nextIn;
+}
+
+setInterval(() => {
+  const remaining = Math.max(0, (_nextScanAt - Date.now()) / 1000);
+  const cd   = document.getElementById('scan-countdown');
+  const fill = document.getElementById('next-scan-fill');
+  const tag  = document.getElementById('next-scan-tag');
+  const isAnalyzing = document.getElementById('analyzing-ind')?.classList.contains('active');
+  if (isAnalyzing) {
+    if (cd)   { cd.textContent = '🔍 Scanning…'; cd.style.color = 'var(--blue)'; }
+    if (fill) { fill.style.width = '100%'; fill.style.background = 'var(--blue)'; }
+    if (tag)  { tag.textContent = 'Scanning…'; }
+  } else {
+    if (cd)   { cd.textContent = `Next scan: ${remaining.toFixed(1)}s`; cd.style.color = ''; }
+    if (fill) { fill.style.width = (remaining / SCAN_INTERVAL * 100) + '%'; fill.style.background = ''; }
+    if (tag)  { tag.textContent = remaining.toFixed(1) + 's'; }
+  }
+}, 200);
+
+// ═══════════════════════════════════════════════════════════════════
+//  AMBIENT STATE GLOW
+// ═══════════════════════════════════════════════════════════════════
+let _lastState = '';
+function updateAmbientState(st) {
+  if (st === _lastState) return;
+  document.body.classList.remove('state-flow','state-stuck','state-drift');
+  if (st === 'flow') document.body.classList.add('state-flow');
+  if (st === 'stuck') document.body.classList.add('state-stuck');
+  _lastState = st;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TOAST TRIGGERS (hook into updateFromBackend)
+// ═══════════════════════════════════════════════════════════════════
+let _lastToastState  = '';
+let _lastErrorCount  = 0;
+let _lastBoxedToastKey = '';   // prevents repeat boxed-answer toasts
+
+function triggerToasts(s) {
+  const st    = s.status_state || 'standby';
+  const errors = s.errors || [];
+
+  // State transitions (stuck / flow only — no spam)
+  if (st !== _lastToastState) {
+    if (st === 'stuck' && _lastToastState && _lastToastState !== 'stuck')
+      toast('warn', "You're stuck", `${Math.round(s.stuck_time||0)}s — tutor may open`, 4000);
+    if (st === 'flow' && _lastToastState === 'stuck')
+      toast('success', 'Back in flow!', 'Great recovery', 3000);
+    _lastToastState = st;
+  }
+
+  // New errors — ONE toast only when error list grows
+  const newCount = errors.length;
+  if (newCount > _lastErrorCount) {
+    const newest = errors[errors.length - 1];
+    if (newest) toast('error', `Check ${newest.step}`, newest.hint || newest.found || '', 6000);
+  }
+  _lastErrorCount = newCount;
+
+  // Boxed answer — fire ONCE per unique verdict+value, never again
+  const boxed = s.boxed_answer || {};
+  if (boxed.detected) {
+    const key = `${boxed.verdict||'unconfirmed'}:${boxed.value}`;
+    if (key !== _lastBoxedToastKey) {
+      _lastBoxedToastKey = key;
+      const verdict = (boxed.verdict||'').toLowerCase();
+      if (verdict === 'correct')   toast('success', '✅ Boxed answer correct!', boxed.value||'', 6000);
+      if (verdict === 'incorrect') toast('error',   '✗ Boxed answer wrong',     boxed.reason||'Check your steps', 6000);
+      // empty verdict = non-unanimous, no toast needed (just shows on card)
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  WRAP updateFromBackend to add extra hooks
+// ═══════════════════════════════════════════════════════════════════
+const _origUpdate = updateFromBackend;
+window.updateFromBackend = function(s) {
+  _origUpdate(s);
+  triggerToasts(s);
+  updateAmbientState(s.status_state || 'standby');
+  updateScanCountdown(s.next_in);
+  // Show next scan card once backend is live
+  if (s.cam_ok) {
+    document.getElementById('next-scan-card').style.display = 'block';
+    document.getElementById('kbd-status').textContent = `● LIVE · GPT-4o vision + Claude tutor · ${new Date().toLocaleTimeString()}`;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  REFLECTION
+// ═══════════════════════════════════════════════════════════════════
+function triggerReflection() {
+  const overlay = document.getElementById('reflection-overlay');
+  overlay.classList.add('show');
+  document.getElementById('ref-working').textContent   = document.getElementById('s-working').textContent;
+  document.getElementById('ref-distracted').textContent= document.getElementById('s-distracted').textContent;
+  const hist = focusHistory.length ? focusHistory : scoreHistory;
+  const avgFocus = hist.length ? Math.round(hist.reduce((a,b)=>a+b,0)/hist.length) : 0;
+  document.getElementById('ref-focus').textContent = avgFocus ? avgFocus+'%' : '—';
+  // Error summary
+  if (errorLog.length > 0) {
+    document.getElementById('ref-errors-wrap').style.display = 'block';
+    document.getElementById('ref-errors-list').innerHTML = errorLog.slice(0,5).map(e=>
+      `<div style="padding:3px 0;border-bottom:1px solid var(--border)"><strong>${e.step}</strong>: ${e.found||''}</div>`
+    ).join('') + (errorLog.length>5?`<div style="color:var(--sub);font-size:11px;margin-top:4px">+ ${errorLog.length-5} more</div>`:'');
+  }
+}
+function closeReflection() {
+  document.getElementById('reflection-overlay').classList.remove('show');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════════════════════
+// ── On-demand speech via Web Speech API ──
+function speakCurrentErrors() {
+  if (!window.speechSynthesis) { toast('warn', 'Speech not supported', 'Try Chrome or Safari'); return; }
+  window.speechSynthesis.cancel();
+
+  // If a boxed answer is detected — speak its verdict first, not errors
+  const boxed = _lastBoxedAnswer || {};
+  if (boxed.detected) {
+    const v = (boxed.verdict || '').toLowerCase();
+    if (v === 'correct') {
+      const u = new SpeechSynthesisUtterance('Answer correct! Well done.');
+      u.rate = 1.05; window.speechSynthesis.speak(u);
+      toast('success', '✅ Answer correct!', boxed.value || '');
+      return;
+    }
+    // incorrect OR empty verdict (non-unanimous models) — box is wrong or unconfirmed
+    const msg = v === 'incorrect'
+      ? `Your boxed answer of ${boxed.value} is incorrect. Press H for a step-by-step explanation.`
+      : `A boxed answer of ${boxed.value} was detected but not yet confirmed. Press S to force a scan.`;
+    const u = new SpeechSynthesisUtterance(msg);
+    u.rate = 1.05; window.speechSynthesis.speak(u);
+    if (v === 'incorrect') toast('error', '✗ Boxed answer wrong', 'Press H for step-by-step help');
+    return;
+  }
+
+  // No boxed answer yet — speak step errors
+  const errs = _lastErrors;
+  if (errs.length === 0) {
+    const msg = _hasReceivedScan ? 'No errors found in your steps so far. Keep going!' : 'No scan yet — point the camera at your work and press S to scan.';
+    const u = new SpeechSynthesisUtterance(msg);
+    u.rate = 1.05; window.speechSynthesis.speak(u);
+    toast('info', 'No errors', _hasReceivedScan ? 'Steps look good' : 'Scan first');
+    return;
+  }
+  toast('info', `Speaking ${errs.length} error${errs.length>1?'s':''}…`, 'Press SPACE again to stop');
+  errs.forEach((e, i) => {
+    setTimeout(() => {
+      const u = new SpeechSynthesisUtterance(`${e.step}: ${e.hint || 'Please check this step.'}`);
+      u.rate = 1.05; window.speechSynthesis.speak(u);
+    }, i * 100);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TEACHING GUIDE (H key)
+// ═══════════════════════════════════════════════════════════════════
+function openTeach() {
+  const modal = document.getElementById('teach-modal');
+  modal.style.display = 'flex';
+  const body = document.getElementById('teach-body');
+  body.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--sub);font-family:var(--mono);font-size:12px"><div style="font-size:24px;margin-bottom:10px;animation:analyzing-pulse 1s infinite">🧠</div>Generating your personalized guide…</div>`;
+
+  fetch(`${BACKEND}/api/teach`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      question: _lastQuestion,
+      errors:   _lastErrors,
+      boxed:    _lastBoxedAnswer
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { body.innerHTML = `<div style="color:var(--red);padding:1rem;font-family:var(--mono);font-size:12px">Error: ${data.error}</div>`; return; }
+    document.getElementById('teach-title').textContent = data.title || 'Step-by-Step Guide';
+    body.innerHTML = `
+      ${data.concept ? `<div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text);margin-bottom:1.25rem;line-height:1.6"><strong style="color:var(--blue)">Key Concept:</strong> ${data.concept}</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:1.25rem">
+        ${(data.steps||[]).map((step,i) => `
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px">${i+1}</div>
+            <div style="flex:1;font-size:13px;color:var(--sub2);line-height:1.7;padding-top:4px">${step.replace(/^Step \d+:\s*/i,'')}</div>
+          </div>`).join('')}
+      </div>
+      ${data.hint ? `<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--amber);line-height:1.6">💡 <strong>Hint:</strong> ${data.hint}</div>` : ''}
+      <div style="margin-top:1.25rem;text-align:center">
+        <button class="btn btn-ghost btn-sm" onclick="closeTeach()">Got it — back to work</button>
+      </div>`;
+  })
+  .catch(err => { body.innerHTML = `<div style="color:var(--red);padding:1rem;font-family:var(--mono);font-size:12px">Could not generate guide. Is the backend running?</div>`; });
+}
+function closeTeach() { document.getElementById('teach-modal').style.display = 'none'; }
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'r' || e.key === 'R') { triggerReflection(); return; }
+  if (e.key === 'h' || e.key === 'H') { openTeach(); return; }
+  if (e.key === 'Escape') { closeTeach(); closeGame(); return; }
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (window.speechSynthesis?.speaking) { window.speechSynthesis.cancel(); return; }
+    speakCurrentErrors();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+//  STUDY MATERIALS
+// ═══════════════════════════════════════════════════════════════════
+const STUDY_DB = {
+  algebra: {
+    label: 'Algebra', color: 'var(--blue)', badge: 'algebra',
+    cards: [
+      { icon: '⚖️', title: 'Balancing Equations', type: 'algebra',
+        body: 'Whatever you do to one side of the <strong>=</strong> sign, you must do to the other. This keeps the equation balanced.',
+        example: 'x + 17 = 22\nx + 17 − 17 = 22 − 17\nx = 5' },
+      { icon: '➡️', title: 'Isolating the Variable', type: 'algebra',
+        body: 'Your goal is to get the variable alone on one side. Use <strong>inverse operations</strong>: undo addition with subtraction, undo multiplication with division.',
+        example: '2x + 10 = 30\n2x = 30 − 10 = 20\nx = 20 ÷ 2 = 10' },
+      { icon: '⚠️', title: 'Sign Rules', type: 'algebra',
+        body: 'When moving a term across the <strong>=</strong>, flip its sign. Moving <strong>+b</strong> becomes <strong>−b</strong> on the other side.',
+        example: 'x + 6 = 10  →  x = 10 − 6\nx − 6 = 10  →  x = 10 + 6' },
+      { icon: '✅', title: 'Verify Your Answer', type: 'algebra',
+        body: 'Always substitute your answer back into the <strong>original equation</strong>. If both sides are equal, you are correct.',
+        example: 'x = 5, check: 5 + 17 = 22 ✓\nx = 10, check: 2(10)+10 = 30 ✓' },
+    ]
+  },
+  arithmetic: {
+    label: 'Arithmetic', color: 'var(--green)', badge: 'arithmetic',
+    cards: [
+      { icon: '➕', title: 'Order of Operations (PEMDAS)', type: 'arithmetic',
+        body: '<strong>P</strong>arentheses → <strong>E</strong>xponents → <strong>M</strong>ultiply/Divide (left→right) → <strong>A</strong>dd/Subtract (left→right). Never skip this order.',
+        example: '3 + 2 × 4 = 3 + 8 = 11\n(3 + 2) × 4 = 5 × 4 = 20' },
+      { icon: '−', title: 'Negative Numbers', type: 'arithmetic',
+        body: 'Subtracting a negative = adding a positive. Multiplying two negatives = positive. Multiplying a negative by positive = negative.',
+        example: '5 − (−3) = 5 + 3 = 8\n(−2) × (−4) = +8\n(−2) × 4 = −8' },
+      { icon: '÷', title: 'Fractions in Equations', type: 'arithmetic',
+        body: 'To clear a fraction, multiply both sides by the denominator.',
+        example: 'x/3 = 5\nx/3 × 3 = 5 × 3\nx = 15' },
+    ]
+  },
+  geometry: {
+    label: 'Geometry', color: 'var(--amber)', badge: 'geometry',
+    cards: [
+      { icon: '📐', title: 'Area & Perimeter', type: 'geometry',
+        body: '<strong>Area</strong> = space inside a shape. <strong>Perimeter</strong> = distance around the outside.',
+        example: 'Rectangle: A = l × w, P = 2(l+w)\nTriangle: A = ½ × b × h\nCircle: A = πr², C = 2πr' },
+      { icon: '📏', title: 'Pythagorean Theorem', type: 'geometry',
+        body: 'For a right triangle: <strong>a² + b² = c²</strong> where c is the hypotenuse (longest side).',
+        example: 'a=3, b=4: c² = 9+16 = 25\nc = √25 = 5 ✓' },
+    ]
+  },
+  general: {
+    label: 'General', color: 'var(--purple)', badge: 'concept',
+    cards: [
+      { icon: '🔍', title: 'Read the Question Carefully', type: 'concept',
+        body: 'Underline what you are asked to <strong>find</strong>. Circle all given values. Write down what you know before solving.',
+        example: '"Solve for x" → isolate x\n"Find the area" → use A formula\n"Simplify" → combine like terms' },
+      { icon: '📝', title: 'Show Every Step', type: 'concept',
+        body: 'Write each step on a new line. Never do two operations at once in your head — write it out. This prevents sign errors.',
+        example: '2x + 10 = 30\n2x = 20      ← step 1\nx = 10       ← step 2' },
+      { icon: '🗑️', title: 'Cross Out Mistakes Clearly', type: 'concept',
+        body: 'Draw a single line through wrong work. <strong>Do not erase</strong> — the AI ignores crossed-out steps. Rewrite the corrected step below.',
+        example: '~~2x = 40~~   ← crossed out\n2x = 20      ← correct step' },
+    ]
+  }
+};
+
+let _lastStudySubject = 'general';
+
+function updateStudyContent(subject, errors) {
+  const sub = (subject || 'general').toLowerCase();
+  const topicKey = STUDY_DB[sub] ? sub : 'general';
+  const topic = STUDY_DB[topicKey];
+
+  // Update badge
+  const badge = document.getElementById('study-topic-badge');
+  if (badge) {
+    badge.textContent = topic.label;
+    badge.style.background = topic.color.replace('var(--','rgba(').replace(')','') + ', 0.12)';
+    badge.style.color = topic.color;
+  }
+
+  // Render study cards
+  const grid = document.getElementById('study-grid');
+  if (grid && topicKey !== _lastStudySubject) {
+    _lastStudySubject = topicKey;
+    const allCards = [...topic.cards, ...STUDY_DB.general.cards.slice(0,2)];
+    grid.innerHTML = allCards.map(c => `
+      <div class="study-card ${c.type}">
+        <div class="study-card-icon">${c.icon}</div>
+        <div class="study-card-title">${c.title}</div>
+        <div class="study-card-body">${c.body}</div>
+        <div class="example-block"><div class="ex-label">Example</div><pre style="margin:0;font-family:var(--mono);font-size:11px;white-space:pre-wrap">${c.example}</pre></div>
+      </div>`).join('');
+  }
+
+  // Render current mistakes
+  const mwrap = document.getElementById('study-mistakes-wrap');
+  if (!mwrap) return;
+  if (!errors || errors.length === 0) {
+    mwrap.innerHTML = '<div class="no-mistakes">✅ No mistakes detected this session — great work!</div>';
+    return;
+  }
+  mwrap.innerHTML = `
+    <div class="mistake-card">
+      <div class="mistake-card-hd">
+        <span style="font-size:18px">⚠️</span>
+        <span class="mistake-card-title">${errors.length} mistake${errors.length>1?'s':''} detected this session</span>
+      </div>
+      ${errors.map(e => `
+        <div class="mistake-item">
+          <div class="mistake-step">${e.step || 'Unknown step'}</div>
+          <div class="mistake-fix">
+            You wrote: <code style="background:var(--bg3);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:11px">${e.found || '?'}</code><br>
+            ${e.correction ? `<strong>Fix:</strong> ${e.correction}<br>` : ''}
+            ${e.hint ? `<strong>Hint:</strong> ${e.hint}` : ''}
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+// Wire into updateFromBackend
+const _studyOrig = window.updateFromBackend;
+window.updateFromBackend = function(s) {
+  _studyOrig(s);
+  const subject = s.subject || 'general';
+  const errors  = s.errors || [];
+  updateStudyContent(subject, errors);
+};
+
+// Init study with defaults
+updateStudyContent('general', []);
+
+// ═══════════════════════════════════════════════════════════════════
+//  GAMES
+// ═══════════════════════════════════════════════════════════════════
+let _activeGame = null;
+let _sprintScore = 0, _sprintTime = 60, _sprintTimer = null, _sprintHS = parseInt(localStorage.getItem('hs_sprint')||'0');
+let _breathCycles = 0, _breathTimer = null;
+let _memCards = [], _memFlipped = [], _memMatched = 0, _memMoves = 0, _memHS = parseInt(localStorage.getItem('hs_memory')||'999');
+
+document.getElementById('hs-sprint').textContent = `Best: ${_sprintHS || '—'}`;
+document.getElementById('hs-memory').textContent = `Best: ${_memHS < 999 ? _memHS+' moves' : '—'}`;
+
+function openGame(type) {
+  _activeGame = type;
+  const modal = document.getElementById('game-modal');
+  const body  = document.getElementById('gm-body');
+  modal.classList.add('show');
+  if (type === 'sprint')  { document.getElementById('gm-title').textContent = '⚡ Math Sprint'; renderSprint(body); }
+  if (type === 'breath')  { document.getElementById('gm-title').textContent = '🧘 Deep Focus'; renderBreath(body); }
+  if (type === 'memory')  { document.getElementById('gm-title').textContent = '🃏 Memory Match'; renderMemory(body); }
+}
+
+function closeGame() {
+  clearInterval(_sprintTimer);
+  clearTimeout(_breathTimer);
+  _activeGame = null;
+  document.getElementById('game-modal').classList.remove('show');
+}
+
+// ── Math Sprint ──────────────────────────────────────────────────
+function _randEq() {
+  const types = [
+    () => { const a=Math.floor(Math.random()*9)+2, b=Math.floor(Math.random()*20)+1, c=a+b; return {q:`x + ${b} = ${c}`, a:a}; },
+    () => { const a=Math.floor(Math.random()*9)+2, b=Math.floor(Math.random()*20)+1, c=a-b; return {q:`x − ${b} = ${c}`, a:a}; },
+    () => { const a=Math.floor(Math.random()*8)+2, b=Math.floor(Math.random()*10)+2, c=a*b; return {q:`${a}x = ${c}`, a:b}; },
+    () => { const a=Math.floor(Math.random()*8)+2, b=Math.floor(Math.random()*9)+2, c=a+b+1; return {q:`x + ${a} + ${b} = ${c+a+b-a-b}`, a:c-a-b+a+b-a-b}; },
+  ];
+  return types[Math.floor(Math.random()*3)]();
+}
+let _curEq = null;
+
+function renderSprint(body) {
+  _sprintScore = 0; _sprintTime = 60;
+  _curEq = _randEq();
+  body.innerHTML = `
+    <div class="sprint-score-row">
+      <div class="sprint-stat"><div class="sprint-stat-val sv-green" id="sp-score">0</div><div class="sprint-stat-lbl">Score</div></div>
+      <div class="sprint-stat"><div class="sprint-stat-val sv-blue" id="sp-time">60</div><div class="sprint-stat-lbl">Seconds</div></div>
+      <div class="sprint-stat"><div class="sprint-stat-val sv-amber">${_sprintHS||'—'}</div><div class="sprint-stat-lbl">Best</div></div>
+    </div>
+    <div class="sprint-question" id="sp-q">${_curEq.q}</div>
+    <input class="sprint-input" id="sp-inp" type="number" placeholder="x = ?" autocomplete="off" autofocus/>
+    <div class="sprint-timer-bar"><div class="sprint-timer-fill" id="sp-bar" style="width:100%"></div></div>
+    <div style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--sub);margin-top:10px">Solve for x · press Enter to submit</div>`;
+  document.getElementById('sp-inp').addEventListener('keydown', e => {
+    if (e.key === 'Enter') _checkSprint();
+  });
+  _sprintTimer = setInterval(() => {
+    _sprintTime--;
+    const tEl = document.getElementById('sp-time');
+    const bEl = document.getElementById('sp-bar');
+    if (tEl) tEl.textContent = _sprintTime;
+    if (bEl) {
+      const pct = (_sprintTime/60)*100;
+      bEl.style.width = pct+'%';
+      bEl.style.background = pct>50?'linear-gradient(90deg,var(--green),var(--cyan))':pct>20?'linear-gradient(90deg,var(--amber),var(--red))':'var(--red)';
+    }
+    if (_sprintTime <= 0) {
+      clearInterval(_sprintTimer);
+      if (_sprintScore > _sprintHS) { _sprintHS = _sprintScore; localStorage.setItem('hs_sprint', _sprintHS); document.getElementById('hs-sprint').textContent = `Best: ${_sprintHS}`; }
+      const b = document.getElementById('gm-body');
+      if (b) b.innerHTML = `<div style="text-align:center;padding:2rem"><div style="font-size:64px;margin-bottom:16px">${_sprintScore>=8?'🏆':_sprintScore>=5?'⭐':'💪'}</div><div style="font-size:28px;font-weight:700;margin-bottom:6px">Score: ${_sprintScore}</div><div style="font-size:13px;color:var(--sub2);margin-bottom:20px">${_sprintScore>=8?'Incredible — you\'re a math machine!':_sprintScore>=5?'Solid run! Keep practicing.':'Good effort! Speed comes with practice.'}</div><button class="btn btn-green" style="margin:auto;display:block" onclick="renderSprint(document.getElementById('gm-body'))">Play Again</button></div>`;
+    }
+  }, 1000);
+}
+
+function _checkSprint() {
+  const inp = document.getElementById('sp-inp');
+  if (!inp || !_curEq) return;
+  const val = parseInt(inp.value);
+  if (val === _curEq.a) {
+    _sprintScore++;
+    document.getElementById('sp-score').textContent = _sprintScore;
+    inp.className = 'sprint-input correct';
+    setTimeout(() => { inp.className = 'sprint-input'; inp.value = ''; _curEq = _randEq(); const q=document.getElementById('sp-q'); if(q) q.textContent=_curEq.q; }, 300);
+  } else {
+    inp.className = 'sprint-input wrong';
+    setTimeout(() => { inp.className = 'sprint-input'; inp.value = ''; }, 400);
+  }
+}
+
+// ── Deep Focus Breathing ─────────────────────────────────────────
+function renderBreath(body) {
+  _breathCycles = 0;
+  body.innerHTML = `
+    <div style="text-align:center">
+      <div class="breath-circle" id="bc"><div class="breath-ring" id="br"></div><span id="bc-text">Ready</span></div>
+      <div class="breath-phase" id="bp-phase">Press Start</div>
+      <div class="breath-sub" id="bp-sub">4-7-8 breathing technique</div>
+      <div class="breath-cycles">Cycles completed: <strong id="bp-cycles">0</strong> / 3</div>
+      <button class="btn btn-green" style="margin:1.5rem auto 0;display:block" id="breath-btn" onclick="startBreath()">Start</button>
+    </div>`;
+}
+
+function startBreath() {
+  document.getElementById('breath-btn').style.display = 'none';
+  _runBreathPhase('inhale');
+}
+
+function _runBreathPhase(phase) {
+  const circle = document.getElementById('bc');
+  const ring   = document.getElementById('br');
+  const phaseEl= document.getElementById('bp-phase');
+  const subEl  = document.getElementById('bp-sub');
+  const cntEl  = document.getElementById('bc-text');
+  if (!circle) return;
+  const phases = {
+    inhale:  { dur:4000, label:'Inhale',  sub:'Breathe in slowly through your nose', scale:'scale(1.5)', color:'rgba(59,130,246,0.3)' },
+    hold:    { dur:7000, label:'Hold',    sub:'Hold your breath — stay still',        scale:'scale(1.5)', color:'rgba(167,139,250,0.3)' },
+    exhale:  { dur:8000, label:'Exhale',  sub:'Breathe out slowly through your mouth',scale:'scale(1)',   color:'rgba(0,214,143,0.2)' },
+  };
+  const p = phases[phase];
+  phaseEl.textContent = p.label;
+  subEl.textContent   = p.sub;
+  circle.style.transition = `transform ${p.dur}ms ease, background ${p.dur}ms ease`;
+  circle.style.transform  = p.scale;
+  circle.style.background = `radial-gradient(circle,${p.color},transparent)`;
+  let secs = Math.round(p.dur/1000);
+  cntEl.textContent = secs;
+  const countdown = setInterval(() => { secs--; if(cntEl) cntEl.textContent = Math.max(0,secs); }, 1000);
+  _breathTimer = setTimeout(() => {
+    clearInterval(countdown);
+    if (!document.getElementById('bc')) return;
+    if (phase === 'inhale')  _runBreathPhase('hold');
+    else if(phase === 'hold')_runBreathPhase('exhale');
+    else {
+      _breathCycles++;
+      const el = document.getElementById('bp-cycles');
+      if (el) el.textContent = _breathCycles;
+      document.getElementById('hs-breath').textContent = `Cycles: ${_breathCycles}`;
+      if (_breathCycles >= 3) {
+        phaseEl.textContent = '✅ Complete!';
+        subEl.textContent   = 'You\'re refreshed — back to work!';
+        circle.style.background = 'radial-gradient(circle,rgba(0,214,143,0.25),transparent)';
+        circle.style.transform = 'scale(1)';
+        if(cntEl) cntEl.textContent = '😌';
+      } else {
+        _runBreathPhase('inhale');
+      }
+    }
+  }, p.dur);
+}
+
+// ── Memory Match ─────────────────────────────────────────────────
+const MEM_PAIRS = [
+  ['x+3=7', 'x=4'], ['2x=10', 'x=5'], ['x−4=6', 'x=10'],
+  ['3x=15', 'x=5'], ['x+8=15', 'x=7'], ['4x=20', 'x=5'],
+  ['x−2=8', 'x=10'],['5x=25', 'x=5'],
+];
+
+function renderMemory(body) {
+  _memFlipped = []; _memMatched = 0; _memMoves = 0;
+  const pairs = MEM_PAIRS.slice(0,4);
+  const cards = [...pairs.map((p,i)=>({id:i*2,  val:p[0],pair:i})),
+                 ...pairs.map((p,i)=>({id:i*2+1,val:p[1],pair:i}))];
+  _memCards = cards.sort(()=>Math.random()-.5);
+  body.innerHTML = `
+    <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--sub2);margin-bottom:12px">
+      <span>Moves: <strong id="mm-moves">0</strong></span>
+      <span>Best: <strong>${_memHS<999?_memHS+' moves':'—'}</strong></span>
+      <span>Matched: <strong id="mm-matched">0</strong>/4</span>
+    </div>
+    <div class="mgrid" id="mem-grid">
+      ${_memCards.map((c,i)=>`<div class="mcard" id="mc${i}" data-idx="${i}" onclick="flipCard(${i})">?</div>`).join('')}
+    </div>
+    <div style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--sub);margin-top:8px">Match equations to their answers</div>`;
+}
+
+function flipCard(i) {
+  const c = _memCards[i];
+  const el = document.getElementById('mc'+i);
+  if (!el || el.classList.contains('matched') || el.classList.contains('flipped') || _memFlipped.length === 2) return;
+  el.textContent = c.val;
+  el.classList.add('flipped');
+  _memFlipped.push(i);
+  if (_memFlipped.length === 2) {
+    _memMoves++;
+    document.getElementById('mm-moves').textContent = _memMoves;
+    const [a, b] = _memFlipped;
+    if (_memCards[a].pair === _memCards[b].pair) {
+      _memMatched++;
+      document.getElementById('mm-matched').textContent = _memMatched;
+      ['mc'+a,'mc'+b].forEach(id => { const e=document.getElementById(id); if(e){e.classList.remove('flipped');e.classList.add('matched');} });
+      _memFlipped = [];
+      if (_memMatched === 4) {
+        if (_memMoves < _memHS) { _memHS = _memMoves; localStorage.setItem('hs_memory',_memHS); document.getElementById('hs-memory').textContent=`Best: ${_memHS} moves`; }
+        setTimeout(() => {
+          const b=document.getElementById('gm-body');
+          if(b) b.innerHTML=`<div style="text-align:center;padding:2rem"><div style="font-size:64px;margin-bottom:16px">🎉</div><div style="font-size:24px;font-weight:700;margin-bottom:6px">Completed in ${_memMoves} moves!</div><div style="font-size:13px;color:var(--sub2);margin-bottom:20px">${_memMoves<=8?'Perfect memory!':_memMoves<=12?'Great job!':'Keep practicing!'}</div><button class="btn btn-green" style="margin:auto;display:block" onclick="renderMemory(document.getElementById('gm-body'))">Play Again</button></div>`;
+        }, 800);
+      }
+    } else {
+      ['mc'+a,'mc'+b].forEach(id => { document.getElementById(id)?.classList.add('wrong'); });
+      setTimeout(() => {
+        ['mc'+a,'mc'+b].forEach(id => { const e=document.getElementById(id); if(e){e.textContent='?';e.classList.remove('flipped','wrong');} });
+        _memFlipped = [];
+      }, 900);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  WEEKLY REPORT CHARTS (Parent Portal)
+// ═══════════════════════════════════════════════════════════════════
+function buildWeeklyCharts() {
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  // Simulated weekly data (will blend real session data when available)
+  const studyMins = [28, 45, 22, 50, 38, 15, 42];
+  const wBarCtx = document.getElementById('weekly-bar-chart')?.getContext('2d');
+  const wPieCtx = document.getElementById('weekly-pie-chart')?.getContext('2d');
+  if (wBarCtx && !wBarCtx._built) {
+    wBarCtx._built = true;
+    new Chart(wBarCtx, {
+      type:'bar',
+      data:{labels:days, datasets:[{
+        data: studyMins,
+        backgroundColor: studyMins.map(v => v>=40?'rgba(0,214,143,0.7)':v>=25?'rgba(59,130,246,0.7)':'rgba(245,158,11,0.7)'),
+        borderRadius:6, borderSkipped:false
+      }]},
+      options:{...chartDefaults, scales:{
+        x:{ticks:{color:'#475569',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(255,255,255,0.04)'}},
+        y:{ticks:{color:'#475569',font:{family:'JetBrains Mono',size:9},callback:v=>v+'m'},grid:{color:'rgba(255,255,255,0.04)'}}
+      }}
+    });
+  }
+  if (wPieCtx && !wPieCtx._built) {
+    wPieCtx._built = true;
+    new Chart(wPieCtx, {
+      type:'doughnut',
+      data:{labels:['Sign Errors','Arithmetic','Wrong Op','Other'],datasets:[{
+        data:[4,3,2,1],
+        backgroundColor:['rgba(244,63,94,0.8)','rgba(245,158,11,0.8)','rgba(59,130,246,0.8)','rgba(100,116,139,0.8)'],
+        borderWidth:0, borderRadius:4
+      }]},
+      options:{...chartDefaults, cutout:'60%',
+        plugins:{...chartDefaults.plugins, legend:{display:true,position:'bottom',labels:{color:'#94a3b8',font:{size:10},boxWidth:10,padding:10}}}
+      }
+    });
+  }
+}
+
+// Hook into portal unlock
+const _origUnlock = unlockPortal;
+window.unlockPortal = function() {
+  _origUnlock();
+  setTimeout(buildWeeklyCharts, 100);
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  ANALYZING TIPS (narration prompts while AI scans)
+// ═══════════════════════════════════════════════════════════════════
+const ANALYZING_TIPS = [
+  "FlowState is now sending this frame to GPT-4o and Gemini simultaneously. Both AIs must agree before any mistake is flagged — no false alarms.",
+  "Two AI models are checking every step right now. They look for arithmetic errors, wrong operations, and sign mistakes — all in about 5 seconds.",
+  "The vision AI reads each handwritten step, substitutes your answer back into the equation, and only flags errors it's 95%+ confident about.",
+  "While scanning: crossed-out work is automatically ignored. Only clean, completed steps are evaluated.",
+  "FlowState tracks your focus, fidget level, and how long you've been stuck — all in real-time, without you having to do anything.",
+  "Consensus scanning: if the AIs disagree on whether a step is wrong, the error is silently dropped. Zero false positives for a better study experience.",
+];
+let _tipIdx = 0;
+function _nextAnalyzingTip() {
+  const tip = ANALYZING_TIPS[_tipIdx % ANALYZING_TIPS.length];
+  _tipIdx++;
+  return tip;
+}
+
+connectBackend();
+setTimeout(initCamera, 1200);
+// Boot toast
+setTimeout(() => toast('info', '🎓 FlowState ready', 'AI-powered math tutor · Box your answer to get checked', 5000), 800);
+// Clock in kbd-bar
+setInterval(() => {
+  const now = new Date();
+  const t = now.toLocaleTimeString('en', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  if (!backendConnected) document.getElementById('kbd-status').textContent = `FlowState AI · GPT-4o Vision + Claude Sonnet · ${t}`;
+}, 1000);
+</script>
+</body>
+</html>

@@ -9,7 +9,7 @@ Vision Tutor — Work Error Checker + Pencil Stillness + Socratic Help
 API: OpenRouter (vision: gpt-4o, tutor: claude-3.5-sonnet)
 """
 
-import base64, json, os, platform, sys, threading, time, tkinter as tk
+import base64, hashlib, json, os, platform, re, subprocess, sys, threading, time, tkinter as tk
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -28,19 +28,33 @@ IS_MAC      = platform.system() == "Darwin"
 CONFIG_FILE = Path.home() / ".panicpoint" / "config.json"
 _API_KEY    = ""   # set once at startup, used everywhere
 
+try:
+    from hand_tracker import HandTracker
+    HAND_TRACKER_OK = True
+except ImportError:
+    HAND_TRACKER_OK = False
+
+try:
+    import server as _server
+    SERVER_OK = True
+except ImportError:
+    SERVER_OK = False
+
 # ── OpenRouter ────────────────────────────────────────────────────────────────
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-VISION_MODEL   = "openai/gpt-4o"
-TUTOR_MODEL    = "anthropic/claude-3.5-sonnet"
+VISION_MODEL    = "openai/gpt-4o"                  # primary vision model
+CONSENSUS_MODEL = "google/gemini-2.0-flash-001"    # secondary — must agree for result to count
+FAST_MODEL      = "openai/gpt-4o-mini"             # periodic scans (single model, speed)
+TUTOR_MODEL     = "anthropic/claude-3.5-sonnet"
 
 # ── Tuning ────────────────────────────────────────────────────────────────────
-PERIODIC_INTERVAL = 10.0   # vision check every N seconds
+PERIODIC_INTERVAL = 6.0    # vision check every N seconds
 STILL_WAIT        = 2.5    # check after pen lifts
 SCAN_INTERVAL     = 0.4    # motion scan frequency (seconds)
 DIFF_THRESHOLD    = 0.035  # fraction of pixels that must change = "motion"
 BLANK_BRIGHTNESS  = 40     # below this = dark/covered lens
 BLANK_STD_DEV     = 18     # below this = blank/uniform page
-STUCK_SECONDS     = 18.0   # seconds stuck at same location before offering help
+STUCK_SECONDS     = 12.0   # seconds stuck at same location before offering help
 STUCK_RADIUS_FRAC = 0.12   # fraction of frame width — how close counts as "same spot"
 MIN_MOTION_PX     = 15     # minimum diff pixels to count as real motion (filters noise)
 LOCKOUT_SECONDS   = 90     # minimum gap between help popups
@@ -60,46 +74,83 @@ C_INDIGO = "#6366f1"
 
 # ── Vision prompt ─────────────────────────────────────────────────────────────
 VISION_PROMPT = """
-You are a real-time academic tutor watching a student solve a problem on paper via camera.
+You are a careful math/science tutor watching a student's handwritten work via camera.
+Your #1 rule: NEVER flag a correct step. A false alarm is far worse than a missed error.
 
-FIRST — check if there is actual written work visible:
-- If the image shows an empty desk, blank paper, or nothing legible, set has_work = false
-  and return immediately with default values. Do NOT invent errors or give a score.
+── STEP 0: ANSWER VERIFICATION (do this FIRST) ──────────────────────────────────
+1. Find the student's final answer (last written value, or boxed value).
+2. Substitute it back into the original equation/problem.
+3. If it makes the equation TRUE → ALL steps are correct. Set errors=[], all_good=true. STOP.
+4. Only if the substitution is FALSE → then examine individual steps for the mistake.
 
-If has_work = true, do ALL of the following:
-1. Identify the question/problem text.
-2. Identify each step the student has written.
-3. For every CLEARLY FINISHED step, check for: wrong calculation, wrong sign,
-   wrong formula, skipped step, unit error, logic gap.
-   - A step is ONLY finished if it has a complete expression with an equals sign and result.
-   - DO NOT flag any step that looks mid-sentence, has a trailing operator, or is missing a result.
-   - When in doubt, assume the student is still writing — skip the step entirely.
-   - It is far better to miss an error than to flag something the student hasn't finished yet.
-4. For each error, write a short "hint" (nudge to help them find the mistake
-   themselves, WITHOUT giving the answer).
-5. Detect if a box/rectangle is drawn around a final answer and evaluate it.
+Concrete example:
+  Q: x + 17 = 22
+  Student writes: x = 22 − 17, then x = 5
+  Verify: 5 + 17 = 22 ✓  →  errors=[], all_good=true.  DO NOT FLAG ANYTHING.
 
+── STEP 1: Is there work to check? ──────────────────────────────────────────────
+If the image is blank, empty desk, or has no legible writing: set has_work=false, return defaults.
+
+── STEP 2: Identify and SKIP crossed-out work ───────────────────────────────────
+BEFORE reading any step, look for crossed-out marks:
+• Lines drawn through a step, X marks, heavy scribbles = CANCELLED WORK.
+• COMPLETELY IGNORE any crossed-out step — do not flag, mention, or score it.
+• Only evaluate clean, uncrossed steps.
+
+── STEP 3: Read handwriting charitably ──────────────────────────────────────────
+• A horizontal stroke between two numbers or variables IS a minus sign (−).
+  Never read "a − b" as "a b" or as a positive number.
+• Faint, short, or thin horizontal lines between terms = minus sign. Assume it.
+• Sloppy equals signs, arrows, underlines = formatting, not errors.
+• If a symbol is ambiguous, pick the interpretation that makes the step CORRECT.
+• Never invent errors based on handwriting style or slant.
+
+── STEP 4: Verify steps (only if Step 0 says answer is wrong) ────────────────────
+For each completed step (has "=" and a value on both sides):
+  a. Compute what the step SHOULD produce from the prior step.
+  b. Compute what the student ACTUALLY wrote (read charitably).
+  c. Flag ONLY if (b) is provably wrong AND you are ≥95% confident.
+  d. If any doubt exists — skip. Do NOT flag.
+
+CORRECT moves to NEVER flag:
+• x + n = m  →  x = m − n          ✓ (subtract n from both sides)
+• x − n = m  →  x = m + n          ✓ (add n to both sides)
+• nx = m     →  x = m/n            ✓ (divide both sides by n)
+• x/n = m    →  x = m·n            ✓ (multiply both sides by n)
+• Distributing, factoring, combining like terms that are equivalent ✓
+
+Only flag (≥95% confidence, verified answer is wrong):
+• Arithmetic result is provably wrong (e.g. 22 − 17 = 6 instead of 5)
+• Wrong algebraic operation applied (adding when should subtract, etc.)
+• Sign error that causes a wrong final answer
+• Wrong physics/geometry formula used
+
+── STEP 5: Skip incomplete or ambiguous steps ────────────────────────────────────
+Skip: trailing operators, no result yet, partially written, unclear handwriting.
+When in doubt → skip. Silence is correct.
+
+── OUTPUT FORMAT ────────────────────────────────────────────────────────────────
 Respond ONLY in valid JSON — no markdown, no text outside JSON:
 
 {
   "has_work": true,
   "question_detected": "the question text",
   "subject": "math|algebra|geometry|science|logic|other",
-  "confidence": 0.9,
+  "confidence": 0.95,
   "errors": [
     {
       "step": "Step 2",
-      "found": "what was written wrong",
+      "found": "exactly what the student wrote",
       "correction": "what it should be",
       "hint": "one-sentence nudge without giving the answer",
-      "explanation": "full one-sentence reason",
+      "explanation": "one sentence: what is mathematically wrong",
       "severity": "critical|major|minor"
     }
   ],
   "boxed_answer": {
     "detected": false,
     "value": "",
-    "verdict": "",
+    "verdict": "correct|incorrect|",
     "reason": ""
   },
   "overall_score": 100,
@@ -107,10 +158,12 @@ Respond ONLY in valid JSON — no markdown, no text outside JSON:
 }
 
 Rules:
-- has_work = false → overall_score = null, errors = [], all_good = false, confidence = 0.
-- all_good = true ONLY if errors = [] AND (no boxed answer OR boxed answer is correct).
-- If no box drawn, boxed_answer.detected = false.
-- Keep hint ONE sentence. Keep explanation ONE sentence.
+- has_work=false → overall_score=null, errors=[], all_good=false, confidence=0.
+- all_good=true ONLY if errors=[] AND (no boxed answer OR boxed answer is correct).
+- If no box drawn, boxed_answer.detected=false.
+- boxed_answer.verdict: substitute the boxed value into the original equation to verify.
+- overall_score: 100 if errors=[], subtract 15 per error, minimum 0.
+- Confidence = how sure you are the handwriting reading is correct (not error existence).
 """
 
 # ── Socratic tutor prompt ─────────────────────────────────────────────────────
@@ -131,35 +184,39 @@ Rules:
 # ── API helpers ───────────────────────────────────────────────────────────────
 
 def get_api_key() -> str:
-    # 1. env var
-    key = os.environ.get("OPENROUTER_API_KEY", "")
-    if key:
-        return key
-    # 2. shared config with panicpoint
+    # 1. config file (preferred — avoids shell typos)
     if CONFIG_FILE.exists():
         try:
-            key = json.loads(CONFIG_FILE.read_text()).get("api_key", "")
-            if key:
+            key = json.loads(CONFIG_FILE.read_text()).get("api_key", "").strip()
+            if key.startswith("sk-or-"):
+                os.environ["OPENROUTER_API_KEY"] = key
                 return key
         except Exception:
             pass
-    # 3. interactive prompt
-    print("\n" + "─" * 44)
-    print("  Vision Tutor — OpenRouter API key needed")
-    print("─" * 44)
-    key = input("OpenRouter API key (sk-or-...): ").strip()
+    # 2. env var (only if looks valid)
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if key.startswith("sk-or-"):
+        return key
+    key = ""  # invalid / missing
+    # 3. interactive prompt if still nothing
     if not key:
-        print("API key required."); sys.exit(1)
-    # save for next time
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = {}
-    if CONFIG_FILE.exists():
-        try:
-            data = json.loads(CONFIG_FILE.read_text())
-        except Exception:
-            pass
-    data["api_key"] = key
-    CONFIG_FILE.write_text(json.dumps(data, indent=2))
+        print("\n" + "─" * 44)
+        print("  Vision Tutor — OpenRouter API key needed")
+        print("─" * 44)
+        key = input("OpenRouter API key (sk-or-...): ").strip()
+        if not key:
+            print("API key required."); sys.exit(1)
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if CONFIG_FILE.exists():
+            try:
+                data = json.loads(CONFIG_FILE.read_text())
+            except Exception:
+                pass
+        data["api_key"] = key
+        CONFIG_FILE.write_text(json.dumps(data, indent=2))
+    # Cache in env so every thread can read it with no globals needed
+    os.environ["OPENROUTER_API_KEY"] = key
     return key
 
 
@@ -168,19 +225,21 @@ def encode_frame(frame) -> str:
     return base64.b64encode(buf).decode("utf-8")
 
 
-def call_vision_api(b64: str) -> dict:
+def _call_single(b64: str, model: str) -> dict:
+    """Call one vision model and return parsed JSON result."""
+    key = os.environ.get("OPENROUTER_API_KEY", "")
     try:
         with httpx.Client(timeout=45.0) as client:
             resp = client.post(
                 OPENROUTER_URL,
                 headers={
-                    "Authorization": f"Bearer {_API_KEY}",
+                    "Authorization": f"Bearer {key}",
                     "HTTP-Referer":  "https://vision-tutor.local",
                     "X-Title":       "Vision Tutor",
                     "Content-Type":  "application/json",
                 },
                 json={
-                    "model": VISION_MODEL,
+                    "model": model,
                     "messages": [{"role": "user", "content": [
                         {"type": "text",      "text": VISION_PROMPT},
                         {"type": "image_url", "image_url": {
@@ -188,7 +247,7 @@ def call_vision_api(b64: str) -> dict:
                         }},
                     ]}],
                     "max_tokens": 1400,
-                    "temperature": 0.15,
+                    "temperature": 0.1,
                 },
             )
         if resp.status_code != 200:
@@ -202,18 +261,133 @@ def call_vision_api(b64: str) -> dict:
     except json.JSONDecodeError as e:
         return {"api_error": f"JSON parse: {e}"}
     except Exception as e:
-        return {"api_error": str(e)}
+        return {"api_error": str(e)[:120]}
+
+
+def _merge_consensus(results: list) -> dict:
+    """
+    Merge results from multiple models.
+    Errors: only kept if EVERY model flags the same step.
+    Boxed verdict: only fires if ALL models agree (correct vs incorrect).
+    Score/question: averaged / longest.
+    """
+    valid = [r for r in results if r and "api_error" not in r]
+    if not valid:
+        return results[0] if results else {"api_error": "all models failed"}
+    if len(valid) == 1:
+        return valid[0]
+
+    # has_work
+    hw = any(r.get("has_work", True) for r in valid)
+
+    # question: longest non-empty string across models
+    questions = [r.get("question_detected", "") for r in valid if r.get("question_detected")]
+    question  = max(questions, key=len) if questions else ""
+
+    # confidence: minimum (most conservative)
+    min_conf = min(r.get("confidence", 1.0) for r in valid)
+
+    # boxed answer: need ALL models to agree on detected=True AND same verdict
+    boxed_list = [r.get("boxed_answer") or {} for r in valid]
+    all_detected = all(b.get("detected") for b in boxed_list)
+    if all_detected:
+        verdicts = [b.get("verdict", "").lower() for b in boxed_list]
+        # unanimous verdict only
+        unanimous = all(v == verdicts[0] for v in verdicts) and verdicts[0] in ("correct", "incorrect")
+        consensus_boxed = {
+            **boxed_list[0],
+            "detected": True,
+            "verdict": verdicts[0] if unanimous else "",   # empty = don't speak
+        }
+    else:
+        consensus_boxed = {"detected": False, "value": "", "verdict": "", "reason": ""}
+
+    boxed_wrong = consensus_boxed.get("verdict", "").lower() == "incorrect"
+
+    # errors: strategy depends on whether boxed answer is confirmed wrong
+    # If answer confirmed wrong → UNION (any model flagging = real error, we know mistake exists)
+    # If answer not confirmed  → INTERSECTION (require both models to agree, conservative)
+    def _step_key(e):
+        # normalize "Step 1", "step1", "step 2:", "Step1" → "step1"
+        s = e.get("step", "").lower().strip().rstrip(":")
+        s = re.sub(r"\s+", "", s)  # remove spaces → "step1"
+        return s
+
+    error_maps = [{_step_key(e): e for e in r.get("errors", [])} for r in valid]
+
+    if boxed_wrong:
+        # UNION: any model that flags a step contributes it (answer confirmed wrong)
+        merged = {}
+        for em in error_maps:
+            for k, e in em.items():
+                if k not in merged:
+                    merged[k] = e
+        consensus_errors = [merged[k] for k in sorted(merged.keys())]
+    elif error_maps:
+        # INTERSECTION: only errors flagged by ALL models
+        common_steps = set(error_maps[0].keys())
+        for em in error_maps[1:]:
+            common_steps &= set(em.keys())
+        consensus_errors = [error_maps[0][k] for k in sorted(common_steps)]
+    else:
+        consensus_errors = []
+
+    # score: average
+    scores = [r.get("overall_score") for r in valid if r.get("overall_score") is not None]
+    avg_score = round(sum(scores) / len(scores)) if scores else None
+
+    return {
+        "has_work":          hw,
+        "question_detected": question,
+        "confidence":        min_conf,
+        "errors":            consensus_errors,
+        "boxed_answer":      consensus_boxed,
+        "overall_score":     avg_score,
+        "all_good":          len(consensus_errors) == 0,
+    }
+
+
+def call_vision_api(b64: str, fast: bool = False) -> dict:
+    """
+    fast=True  → single fast model (periodic background scans, low latency).
+    fast=False → two models in parallel, consensus merge (manual scan, accurate).
+    """
+    if fast:
+        result = _call_single(b64, FAST_MODEL)
+        print(f"  [fast/{FAST_MODEL.split('/')[-1]}]")
+        return result
+
+    # Parallel consensus: GPT-4o + Gemini Flash
+    results = [None, None]
+    def _t(idx, model):
+        results[idx] = _call_single(b64, model)
+        name = model.split("/")[-1]
+        errs = results[idx].get("errors", []) if results[idx] else []
+        boxed = (results[idx].get("boxed_answer") or {}) if results[idx] else {}
+        print(f"  [{name}] errors={len(errs)} boxed={boxed.get('detected')} verdict={boxed.get('verdict','')}")
+
+    threads = [
+        threading.Thread(target=_t, args=(0, VISION_MODEL),    daemon=True),
+        threading.Thread(target=_t, args=(1, CONSENSUS_MODEL), daemon=True),
+    ]
+    for t in threads: t.start()
+    for t in threads: t.join(timeout=50)
+
+    merged = _merge_consensus(results)
+    print(f"  [consensus] errors={len(merged.get('errors',[]))} boxed_verdict={merged.get('boxed_answer',{}).get('verdict','')}")
+    return merged
 
 
 def call_tutor_api(history: list, max_tokens: int = 400) -> str:
     """Multi-turn Socratic tutor call."""
+    key = os.environ.get("OPENROUTER_API_KEY", "")
     messages = [{"role": "system", "content": TUTOR_SYSTEM}] + history
     try:
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(
                 OPENROUTER_URL,
                 headers={
-                    "Authorization": f"Bearer {_API_KEY}",
+                    "Authorization": f"Bearer {key}",
                     "HTTP-Referer":  "https://vision-tutor.local",
                     "X-Title":       "Vision Tutor",
                     "Content-Type":  "application/json",
@@ -339,7 +513,8 @@ class SocraticPopup:
         self._setup()
         self._build()
         self._keep_on_top()
-        self._start()
+        # Delay start so window fully renders before we insert text
+        self.win.after(150, self._start)
 
     # ── window setup ──
 
@@ -469,6 +644,10 @@ class SocraticPopup:
         self._chat.insert("end", f"{body}\n\n", body_tag)
         self._chat.config(state="disabled")
         self._chat.see("end")
+        try:
+            self.win.update_idletasks()
+        except Exception:
+            pass
 
     def _set_thinking(self, on: bool):
         self._chat.config(state="normal")
@@ -486,6 +665,10 @@ class SocraticPopup:
             self._input.config(state="normal")
             self._input.focus_set()
         self._chat.config(state="disabled")
+        try:
+            self.win.update_idletasks()
+        except Exception:
+            pass
 
     # ── conversation ──
 
@@ -564,6 +747,35 @@ class SocraticPopup:
         self.on_dismiss()
 
 
+# ── Audio alerts (macOS) ──────────────────────────────────────────────────────
+
+_speak_lock = threading.Lock()
+
+def play_error_sound():
+    """Play system error sound (non-blocking)."""
+    if not IS_MAC:
+        return
+    sounds = [
+        "/System/Library/Sounds/Sosumi.aiff",
+        "/System/Library/Sounds/Basso.aiff",
+    ]
+    for s in sounds:
+        if os.path.exists(s):
+            subprocess.Popen(["afplay", s],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+
+def speak(text: str):
+    """Speak text aloud via macOS `say` (non-blocking, queued)."""
+    if not IS_MAC:
+        return
+    def _run():
+        with _speak_lock:
+            subprocess.run(["say", "-v", "Samantha", text],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    threading.Thread(target=_run, daemon=True).start()
+
+
 # ── Terminal output ───────────────────────────────────────────────────────────
 
 def print_result(result: dict, label: str = ""):
@@ -635,31 +847,8 @@ def draw_overlay(frame, state: dict):
         cv2.putText(ov, "No paper detected — point camera at your work",
                     (w//2-240, h//2), cv2.FONT_HERSHEY_SIMPLEX, 0.70, (100,100,220), 2, cv2.LINE_AA)
 
-    # error banners
-    errors  = state.get("errors", [])
-    boxed   = state.get("boxed_answer", {})
-    box_h   = 38 if boxed.get("detected") else 0
-    for i, e in enumerate(errors[:4]):
-        sev = e.get("severity","major")
-        bg  = (0,0,165) if sev=="critical" else (0,65,185) if sev=="major" else (0,105,85)
-        y   = h - box_h - 40 - i*38
-        cv2.rectangle(ov, (0, y), (w, y+36), bg, -1)
-        l1 = f"!  {e.get('step','?')}: {e.get('found','')}  →  {e.get('correction','')}"
-        cv2.putText(ov, l1[:105], (8, y+16),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255,255,255), 1, cv2.LINE_AA)
-        hint = e.get("hint","")
-        if hint:
-            cv2.putText(ov, f"   Hint: {hint[:95]}", (8, y+30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200,230,255), 1, cv2.LINE_AA)
-
-    if boxed.get("detected"):
-        verdict = (boxed.get("verdict") or "").lower()
-        bg  = (0,130,0) if verdict=="correct" else (0,0,185)
-        sym = "CORRECT" if verdict=="correct" else "WRONG"
-        txt = f"[{sym}] Boxed: {boxed.get('value','')} — {boxed.get('reason','')}"
-        cv2.rectangle(ov, (0, h-38), (w, h), bg, -1)
-        cv2.putText(ov, txt[:108], (8, h-12),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.54, (255,255,255), 2, cv2.LINE_AA)
+    # errors are shown on the frontend dashboard — not overlaid on video
+    errors = state.get("errors", [])
 
     if state.get("analyzing"):
         dots = "." * (int(time.time()*2) % 4)
@@ -683,21 +872,51 @@ def draw_overlay(frame, state: dict):
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
-def live_watch(api_key: str):
+def live_watch(api_key: str, cam_index: int = -1):
     global _API_KEY
     _API_KEY = api_key
     # ── camera ──
     cap = None
-    for idx in range(5):
-        c = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
-        if c.isOpened():
-            for _ in range(8):
-                c.read(); time.sleep(0.04)
-            cap = c
-            print(f"Camera ready (index {idx})")
-            break
-    if cap is None:
-        print("ERROR: No camera found."); sys.exit(1)
+    USB_KEYWORDS = ["emeet", "smartcam", "logitech", "elgato", "uvc", "external",
+                    "c920", "c960", "c922", "brio", "facecam"]
+
+    def _open_cam(idx: int):
+        c = cv2.VideoCapture(idx)
+        if not c.isOpened():
+            return None
+        # Give camera time to warm up — iPhone Continuity Camera needs ~2s
+        deadline = time.time() + 3.0
+        ret = False
+        while time.time() < deadline:
+            ret, _ = c.read()
+            if ret:
+                break
+            time.sleep(0.1)
+        if not ret:
+            c.release()
+            return None
+        # Flush a few more frames
+        for _ in range(10):
+            c.read(); time.sleep(0.1)
+        return c
+
+    if cam_index >= 0:
+        cap = _open_cam(cam_index)
+        if cap is None:
+            print(f"ERROR: Camera {cam_index} not found or unreadable.")
+            sys.exit(1)
+        print(f"Camera ready (index {cam_index})")
+    else:
+        # Prefer external cameras: iPhone Continuity (2), EMEET (1), built-in (0)
+        for idx in [2, 1, 0, 3, 4]:
+            c = _open_cam(idx)
+            if c is not None:
+                cap = c
+                print(f"Camera ready (index {idx})")
+                break
+        if cap is None:
+            print("ERROR: No camera found.")
+            sys.exit(1)
 
     # ── tkinter root (hidden — just hosts popups) ──
     root = tk.Tk()
@@ -708,6 +927,19 @@ def live_watch(api_key: str):
                          "style", root._w, "floating", "noActivates")
         except Exception:
             pass
+
+    # ── hand tracker (shared camera) ──
+    hand = None
+    if HAND_TRACKER_OK:
+        hand = HandTracker()
+        hand.start_shared()
+        print("[HandTracker] Initializing (model loading)...")
+    else:
+        print("[HandTracker] Not available (mediapipe/opencv missing).")
+
+    # ── dashboard server ──
+    if SERVER_OK:
+        _server.start_server()
 
     print("\nVision Tutor — Live")
     print("  S = force scan  |  Q = quit\n")
@@ -727,19 +959,55 @@ def live_watch(api_key: str):
         "stuck_time":   0.0,
         "popup_open":   False,
     }
-    error_history  = []
-    active_errors  = []       # current error list from last vision check
-    active_question = ""
+    error_history        = []
+    error_repeat_counts  = {}   # (step, found) -> int
+    error_consec_counts  = {}   # (step, found) -> consecutive scan count (debounce)
+    last_spoken_hash     = ""
+    last_all_good        = False
+    last_speech_snap     = None  # frame at last TTS — suppresses same-paper speech
+    last_boxed_spoken    = ""    # verdict hash to avoid repeating boxed verdict
+    pending_boxed_verdict = ""   # verdict seen last scan — must match twice to fire
+    pending_boxed_data    = {}
+    active_errors        = []
+    active_question      = ""
+    repeated_errors      = []
+    locked_question      = ""    # question locked once detected with high confidence
+    locked_question_conf = 0.0   # confidence at lock time
+    question_done        = False  # True after boxed-correct; resets for next question
 
-    stuck_tracker   = StuckTracker()
-    last_frame      = None
-    last_scan_at    = 0.0
+    def _work_hash(question: str, errors: list) -> str:
+        """Fingerprint of current detected work — changes when errors or question change."""
+        parts = question + "|" + ",".join(
+            sorted(f"{e.get('step','')}:{e.get('found','')}" for e in errors)
+        )
+        return hashlib.md5(parts.encode()).hexdigest()
+
+    def _frame_changed(snap_new) -> bool:
+        """True if the paper image has visibly changed since last speech (>3% pixels differ)."""
+        if last_speech_snap is None:
+            return True
+        a = cv2.resize(last_speech_snap, (80, 45)).astype(float)
+        b = cv2.resize(snap_new, (80, 45)).astype(float)
+        diff = np.abs(a - b).max(axis=2)           # per-pixel max channel diff
+        changed_frac = np.mean(diff > 25)          # fraction of pixels that changed a lot
+        return changed_frac > 0.03                 # >3% pixels changed = new writing
+
+    stuck_tracker    = StuckTracker()
+    last_frame       = None
+    last_scan_at     = 0.0
     last_periodic_at = time.time()
-    still_since     = None
-    still_triggered = False
-    force_snap      = False
-    popup_ref       = None
-    last_popup_at   = 0.0
+    still_since      = None
+    still_triggered  = False
+    force_snap       = False
+    popup_ref        = None
+    last_popup_at    = 0.0
+
+    # session timing
+    session_start      = time.time()
+    session_working    = 0
+    session_distracted = 0
+    last_sec_at        = time.time()
+    last_server_push   = 0.0
 
     def on_popup_dismiss():
         nonlocal popup_ref
@@ -755,8 +1023,10 @@ def live_watch(api_key: str):
         last_popup_at = time.time()
         popup_ref = SocraticPopup(root, error, question, on_popup_dismiss)
 
-    def run_analysis(snap, label=""):
-        nonlocal active_errors, active_question
+    SPEAK_COOLDOWN = 90.0   # seconds between speaking the same error key
+
+    def run_analysis(snap, label="", fast=False):
+        nonlocal active_errors, active_question, repeated_errors, last_spoken_hash, last_all_good, last_speech_snap, last_boxed_spoken, locked_question, locked_question_conf, question_done, pending_boxed_verdict, pending_boxed_data
         if is_blank_frame(snap):
             with lock:
                 state.update(analyzing=False, blank=True, score=None,
@@ -768,7 +1038,7 @@ def live_watch(api_key: str):
             state.update(analyzing=True, blank=False,
                          status="Analyzing...", status_color=(0,215,255))
 
-        result = call_vision_api(encode_frame(snap))
+        result = call_vision_api(encode_frame(snap), fast=fast)
         print_result(result, label)
 
         errors  = result.get("errors", [])
@@ -778,14 +1048,97 @@ def live_watch(api_key: str):
         conf    = result.get("confidence", 1.0)
         hw      = result.get("has_work", True)
 
-        active_errors   = errors if hw else []
-        active_question = q or active_question
+        # ── Question locking ─────────────────────────────────────────────────────
+        # Lock the question text once detected with >= 0.75 confidence.
+        # Never change it until a correct boxed answer resets for the next question.
+        if q and conf >= 0.75 and not locked_question:
+            locked_question      = q
+            locked_question_conf = conf
+            print(f"  [Question locked] '{locked_question}' (conf={conf:.2f})")
+        elif q and conf >= locked_question_conf + 0.15 and not question_done:
+            # Replace if significantly more confident (edge case)
+            locked_question      = q
+            locked_question_conf = conf
 
-        ts = datetime.now().strftime("%H:%M:%S")
-        for e in errors:
-            if not any(h.get("found") == e.get("found") and
-                       h.get("step") == e.get("step") for h in error_history):
+        display_question = locked_question or q
+
+        active_errors   = errors if hw else []
+        active_question = display_question
+
+        ts    = datetime.now().strftime("%H:%M:%S")
+        now_t = time.time()
+
+        # ── Frame-change gate — suppress ALL TTS if paper hasn't visibly changed ──
+        paper_changed = _frame_changed(snap)
+
+        # ── Error debouncing: only surface an error after it appears in 2+ consecutive scans ──
+        current_error_keys = {(e.get("step",""), e.get("found","")) for e in errors}
+        # Increment consecutive count for errors seen this scan
+        for key in current_error_keys:
+            error_consec_counts[key] = error_consec_counts.get(key, 0) + 1
+        # Reset count for errors NOT seen this scan (they disappeared)
+        for key in list(error_consec_counts.keys()):
+            if key not in current_error_keys:
+                error_consec_counts[key] = 0
+
+        # Only show errors that have appeared in >= 2 consecutive scans
+        confirmed_errors = [e for e in errors
+                            if error_consec_counts.get((e.get("step",""), e.get("found","")), 0) >= 2]
+
+        # Track history for first confirmed appearance
+        for e in confirmed_errors:
+            key = (e.get("step",""), e.get("found",""))
+            count = error_repeat_counts.get(key, 0) + 1
+            error_repeat_counts[key] = count
+            if count == 1:
                 error_history.append({**e, "ts": ts})
+            if count >= 2:
+                repeated_errors = [r for r in repeated_errors
+                                   if (r.get("step"), r.get("found")) != key]
+                repeated_errors.append({**e, "repeat_count": count, "ts": ts})
+
+        # Remove repeated errors that are no longer confirmed
+        confirmed_keys = {(e.get("step",""), e.get("found","")) for e in confirmed_errors}
+        repeated_errors = [r for r in repeated_errors
+                           if (r.get("step",""), r.get("found","")) in confirmed_keys]
+
+        # ── Boxed-answer: require SAME verdict on 2 consecutive scans before speaking ──
+        if hw and boxed.get("detected"):
+            verdict   = (boxed.get("verdict") or "").lower()
+            boxed_key = f"{verdict}:{boxed.get('value','')}"
+            if verdict and verdict == pending_boxed_verdict:
+                # Confirmed — same verdict two scans in a row, speak it
+                if boxed_key != last_boxed_spoken and paper_changed:
+                    last_boxed_spoken = boxed_key
+                    last_speech_snap  = snap.copy()
+                    if verdict == "correct":
+                        question_done        = True
+                        locked_question      = ""
+                        locked_question_conf = 0.0
+                        speak("Answer correct! Well done. Move on to the next question.")
+                    elif verdict == "incorrect":
+                        if confirmed_errors:
+                            bad_step = confirmed_errors[0].get("step", "your work")
+                            speak(f"Boxed answer is not right. Please check {bad_step}.")
+                        else:
+                            speak("Boxed answer doesn't look right. Double-check your steps.")
+            else:
+                # First time seeing this verdict — wait for next scan to confirm
+                pending_boxed_verdict = verdict
+                pending_boxed_data    = boxed
+        else:
+            pending_boxed_verdict = ""
+            pending_boxed_data    = {}
+
+        last_all_good = (hw and not confirmed_errors)
+
+        # Play chime (no speech) when new confirmed errors appear — visual + sound only
+        work_hash    = _work_hash(display_question, confirmed_errors)
+        work_changed = (work_hash != last_spoken_hash) and paper_changed
+        if confirmed_errors and work_changed:
+            last_spoken_hash = work_hash
+            last_speech_snap = snap.copy()
+            play_error_sound()   # chime only — no speech, user presses SPACE to hear it
 
         with lock:
             state["analyzing"] = False
@@ -793,10 +1146,12 @@ def live_watch(api_key: str):
             if not hw:
                 state.update(status="No paper detected", status_color=(120,120,120), score=None)
                 return
-            if q:
-                state["question"] = q
+            if display_question:
+                state["question"] = display_question
+            if result.get("subject"):
+                state["subject"] = result["subject"].lower()
             state["score"]        = score if conf >= 0.5 and score is not None else None
-            state["errors"]       = errors
+            state["errors"]       = confirmed_errors
             state["boxed_answer"] = boxed if boxed.get("detected") else state["boxed_answer"]
 
             if "api_error" in result:
@@ -822,6 +1177,10 @@ def live_watch(api_key: str):
             root.update()
             continue
 
+        # Feed to hand tracker (shares same frame, no extra camera needed)
+        if hand is not None:
+            hand.feed_frame(frame)
+
         now = time.time()
 
         key = cv2.waitKey(1) & 0xFF
@@ -829,6 +1188,17 @@ def live_watch(api_key: str):
             break
         if key in (ord('s'), ord('S')):
             force_snap = True
+        if key == ord(' '):   # SPACE = speak current errors on demand
+            errs = list(active_errors)
+            q_now = active_question
+            def _speak_on_demand(errs, q_now):
+                if not errs:
+                    speak("All steps look correct so far." if q_now else "No errors detected.")
+                else:
+                    for e in errs:
+                        speak(f"Please check {e.get('step','that step')}. {e.get('hint','')}")
+                        time.sleep(0.6)
+            threading.Thread(target=_speak_on_demand, args=(errs, q_now), daemon=True).start()
 
         # ── scan cycle ──
         if now - last_scan_at >= SCAN_INTERVAL:
@@ -838,9 +1208,12 @@ def live_watch(api_key: str):
                 analyzing  = state["analyzing"]
                 popup_open = state["popup_open"]
 
-            # pencil/hand position via motion centroid from paper camera
+            # pencil/hand position — prefer MediaPipe landmarks (precise),
+            # fall back to frame-diff centroid when no hand is detected
             centroid = None
-            if last_frame is not None:
+            if hand is not None:
+                centroid = hand.get_hand_position()   # (cx,cy) normalized or None
+            if centroid is None and last_frame is not None:
                 centroid = motion_centroid(last_frame, frame)
 
             stuck_tracker.update(centroid)
@@ -884,7 +1257,8 @@ def live_watch(api_key: str):
                         last_periodic_at = now
                         snap = frame.copy()
                         threading.Thread(
-                            target=run_analysis, args=(snap, "still"), daemon=True
+                            target=run_analysis, args=(snap, "still"),
+                            kwargs={"fast": False}, daemon=True
                         ).start()
 
             last_frame = frame.copy()
@@ -898,7 +1272,8 @@ def live_watch(api_key: str):
                     still_triggered  = False
                     snap = frame.copy()
                     threading.Thread(
-                        target=run_analysis, args=(snap, "periodic"), daemon=True
+                        target=run_analysis, args=(snap, "periodic"),
+                        kwargs={"fast": False}, daemon=True
                     ).start()
 
         # ── draw ──
@@ -906,6 +1281,110 @@ def live_watch(api_key: str):
         with lock:
             s = dict(state)
         display = draw_overlay(display, s)
+
+        # fidget HUD (top-right corner) — composite + sub-scores
+        if hand is not None:
+            fs = hand.get_fidget_scores()
+            if fs.get("cam_ok"):
+                fidget = fs["fidget"]
+                fh, fw = display.shape[:2]
+                # background panel
+                panel_w, panel_h = 175, 130
+                px = fw - panel_w - 4
+                py = 4
+                cv2.rectangle(display, (px, py), (fw - 4, py + panel_h), (20,20,20), -1)
+                cv2.rectangle(display, (px, py), (fw - 4, py + panel_h), (60,60,60), 1)
+
+                # composite bar
+                col = (80,220,80) if fidget < 40 else (0,200,220) if fidget < 70 else (60,60,220)
+                cv2.putText(display, f"Fidget: {fidget:.0f}", (px+6, py+18),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, col, 2, cv2.LINE_AA)
+                bar_w = int((panel_w - 12) * fidget / 100)
+                cv2.rectangle(display, (px+6, py+22), (px + panel_w - 6, py+27), (50,50,50), -1)
+                cv2.rectangle(display, (px+6, py+22), (px+6+bar_w, py+27), col, -1)
+
+                # sub-scores
+                subs = [
+                    ("Tap",  fs["tapping"]),
+                    ("Vel",  fs["velocity"]),
+                    ("Tens", fs["tension"]),
+                    ("Rest", fs["restlessness"]),
+                ]
+                for i, (lbl, val) in enumerate(subs):
+                    row_y = py + 44 + i * 22
+                    sub_col = (80,220,80) if val < 35 else (0,200,220) if val < 65 else (60,80,220)
+                    cv2.putText(display, f"{lbl}:{val:4.0f}", (px+6, row_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.38, sub_col, 1, cv2.LINE_AA)
+                    sb_w = int(60 * val / 100)
+                    cv2.rectangle(display, (px+68, row_y-8), (px+128, row_y-4), (45,45,45), -1)
+                    cv2.rectangle(display, (px+68, row_y-8), (px+68+sb_w, row_y-4), sub_col, -1)
+
+                # hand detected indicator
+                hand_pos = hand.get_hand_position()
+                dot_col = (0,220,80) if hand_pos else (80,80,80)
+                cv2.circle(display, (fw - 12, py + 8), 5, dot_col, -1)
+
+        # ── session timing (1 Hz) ──
+        if now - last_sec_at >= 1.0:
+            last_sec_at = now
+            hp = hand.get_hand_position() if hand else None
+            is_active = hp is not None or centroid is not None
+            if is_active:
+                session_working += 1
+            else:
+                session_distracted += 1
+
+        # ── push to dashboard (2 Hz) ──
+        if SERVER_OK and now - last_server_push >= 0.5:
+            last_server_push = now
+            with lock:
+                _s = dict(state)
+            _fs = hand.get_fidget_scores() if hand else {}
+            _fid    = _fs.get("fidget", 0.0)
+            _errs   = _s.get("errors", [])
+            _stuck  = _s.get("stuck_time", 0.0)
+            _cam_ok = _fs.get("cam_ok", False)
+
+            def _focus(errs, stk, fid):
+                sc = 100 - min(32, len(errs)*8)
+                if stk > 5: sc -= min(25, int(stk - 5))
+                if fid > 50: sc -= min(15, int((fid - 50)*0.3))
+                return max(0, sc)
+
+            def _flow_state(errs, stk, fid, cam):
+                if not cam: return "standby"
+                if errs and stk > 8: return "stuck"
+                if fid > 55 or (errs and stk > 3) or stk > 15: return "drift"
+                return "flow"
+
+            _server.push_state({
+                "cam_ok":              _cam_ok,
+                "status":              _s.get("status", ""),
+                "status_state":        _flow_state(_errs, _stuck, _fid, _cam_ok),
+                "focus_score":         _focus(_errs, _stuck, _fid),
+                "score":               _s.get("score"),
+                "question":            _s.get("question", ""),
+                "errors":              _errs,
+                "repeated_errors":     repeated_errors,
+                "boxed_answer":        _s.get("boxed_answer", {}),
+                "analyzing":           _s.get("analyzing", False),
+                "blank":               _s.get("blank", False),
+                "stuck_time":          _stuck,
+                "popup_open":          _s.get("popup_open", False),
+                "fidget":              float(_fid),
+                "fidget_velocity":     float(_fs.get("velocity", 0.0)),
+                "fidget_tapping":      float(_fs.get("tapping", 0.0)),
+                "fidget_tension":      float(_fs.get("tension", 0.0)),
+                "fidget_restlessness": float(_fs.get("restlessness", 0.0)),
+                "next_in":             _s.get("next_in", 0.0),
+                "session_active":      True,
+                "working_seconds":     session_working,
+                "distracted_seconds":  session_distracted,
+                "session_seconds":     session_working + session_distracted,
+                "error_history":       error_history[-20:],
+            })
+            _server.push_frame(display)
+
         cv2.imshow("Vision Tutor  (S = scan  |  Q = quit)", display)
 
         # pump tkinter events
@@ -915,6 +1394,8 @@ def live_watch(api_key: str):
             break
 
     cap.release()
+    if hand is not None:
+        hand.stop()
     cv2.destroyAllWindows()
     try:
         root.destroy()
@@ -938,4 +1419,9 @@ def live_watch(api_key: str):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    live_watch(get_api_key())
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--camera", type=int, default=-1,
+                   help="Camera index to use (default: auto-detect)")
+    args = p.parse_args()
+    live_watch(get_api_key(), cam_index=args.camera)
